@@ -1,0 +1,1316 @@
+// =====================================================================
+// [NOME DA MARCA] — E-commerce B2B de ombrelones
+// Modelagem PostgreSQL. Valores monetários em CENTAVOS (Int) para evitar
+// erros de ponto flutuante. Dimensões em milímetros, pesos em gramas.
+// =====================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  // Cliente sem binário nativo (Rust-free): consultas via driver `pg`.
+  previewFeatures = ["queryCompiler", "driverAdapters"]
+  engineType      = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------
+// EMPRESAS, USUÁRIOS E ACESSO
+// ---------------------------------------------------------------------
+
+enum CompanyStatus {
+  PENDING_EMAIL // cadastro criado, e-mail não verificado
+  ACTIVE // preços B2B liberados
+  UNDER_REVIEW // sinal de risco: revisão excepcional
+  BLOCKED // bloqueada pelo administrativo
+}
+
+enum CnpjRegistrationStatus {
+  ATIVA
+  SUSPENSA
+  INAPTA
+  BAIXADA
+  NULA
+  DESCONHECIDA
+}
+
+model Company {
+  id                 String                 @id @default(cuid())
+  cnpj               String                 @unique // somente dígitos
+  legalName          String // razão social
+  tradeName          String? // nome fantasia
+  registrationStatus CnpjRegistrationStatus @default(DESCONHECIDA)
+  mainActivity       String? // CNAE principal (descrição)
+  mainActivityCode   String?
+  stateRegistration  String? // inscrição estadual (opcional)
+  status             CompanyStatus          @default(PENDING_EMAIL)
+  riskScore          Int                    @default(0)
+  riskReasons        String[]
+  cnpjLookupRaw      Json? // resposta bruta do provedor (auditoria)
+  cnpjCheckedAt      DateTime?
+  blockedReason      String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  members   CompanyMember[]
+  addresses Address[]
+  carts     Cart[]
+  orders    Order[]
+  erpRef    String? // ID do cliente no ERP
+
+  @@index([status])
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String
+  phone           String?
+  passwordHash    String
+  emailVerifiedAt DateTime?
+  isActive        Boolean   @default(true)
+  failedLogins    Int       @default(0)
+  lockedUntil     DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  memberships CompanyMember[]
+  sessions    Session[]
+  tokens      VerificationToken[]
+  adminRole   AdminUser?
+}
+
+enum CompanyRole {
+  OWNER
+  BUYER
+  VIEWER
+}
+
+/// Vínculo usuário ⇄ empresa. Permite vários usuários por empresa.
+model CompanyMember {
+  id        String      @id @default(cuid())
+  userId    String
+  companyId String
+  role      CompanyRole @default(BUYER)
+  createdAt DateTime    @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+}
+
+model Session {
+  id              String   @id // hash SHA-256 do token (o token em claro fica só no cookie)
+  userId          String
+  activeCompanyId String?
+  expiresAt       DateTime
+  ip              String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+enum TokenPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+model VerificationToken {
+  id        String       @id @default(cuid())
+  userId    String
+  tokenHash String       @unique
+  purpose   TokenPurpose
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum AdminPermission {
+  DASHBOARD
+  PRODUCTS
+  CUSTOMERS
+  ORDERS
+  LOGISTICS
+  FINANCE
+  SETTINGS
+  ADMIN_USERS
+  STOCK
+}
+
+model AdminUser {
+  id          String            @id @default(cuid())
+  userId      String            @unique
+  permissions AdminPermission[]
+  createdAt   DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Controle de abuso (cadastro, login, consulta de CNPJ) por chave (ip/email/cnpj).
+model RateLimitBucket {
+  key     String   @id
+  count   Int
+  resetAt DateTime
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  companyId  String
+  label      String? // ex.: "Loja Centro"
+  recipient  String
+  zipCode    String // somente dígitos
+  street     String
+  number     String
+  complement String?
+  district   String
+  city       String
+  state      String // UF
+  phone      String?
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------
+// CATÁLOGO
+// ---------------------------------------------------------------------
+
+model Category {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  name        String
+  description    String? // texto de apresentação da página da categoria
+  seoTitle       String?
+  seoDescription String?
+  imageUrl       String?
+  position       Int       @default(0)
+  isActive       Boolean   @default(true)
+  products       Product[]
+}
+
+enum OpeningType {
+  MANIVELA
+  MANUAL
+  ALAVANCA
+  AUTOMATICA
+  OUTRO
+}
+
+enum MeasureUnit {
+  CM
+  M
+}
+
+model Product {
+  id               String       @id @default(cuid())
+  code             String?      @unique // código interno / SKU base (obrigatório no formulário)
+  slug             String       @unique
+  name             String
+  color            String? // cor / acabamento predominante (texto livre)
+  internalNotes    String? // observações internas — nunca exibidas na loja
+  measureUnit      MeasureUnit  @default(CM) // unidade de EXIBIÇÃO das medidas montado
+  lengthMm         Int? // comprimento montado
+  // Custo final base (centavos) = mercadoria + IPI do fornecedor principal + custos adicionais.
+  // Recalculado no servidor ao salvar o produto, o vínculo ou um item da tabela de custos.
+  costFinalCents   Int?
+  costUpdatedAt    DateTime?
+  markup           Int? // markup de venda × 10.000 (2,5 → 25000). Preço calculado = custo final × markup
+  markupUpdatedAt  DateTime?
+  description      String?
+  categoryId       String
+  isActive         Boolean      @default(true) // exclusão lógica = false
+  isFeatured       Boolean      @default(false)
+  deletedAt        DateTime?
+  // Ficha técnica — TODOS os campos opcionais e editáveis no painel.
+  // Nunca preencher com dados inventados.
+  heightMm         Int?
+  diameterMm       Int? // diâmetro ou largura
+  depthMm          Int?
+  frameMaterial    String?
+  openingType      OpeningType?
+  coverFeatures    String?
+  weightG          Int?
+  warranty         String?
+  careInstructions String?
+  seoTitle         String?
+  seoDescription   String?
+  erpRef           String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  category  Category          @relation(fields: [categoryId], references: [id])
+  variants  ProductVariant[]
+  images    ProductImage[]
+  suppliers ProductSupplier[]
+  costItems ProductCostItem[]
+  packages  ProductPackage[]
+
+  @@index([categoryId, isActive])
+}
+
+/// Embalagem padrão do produto (usada no frete quando a variação não tem embalagem própria).
+model ProductPackage {
+  id        String  @id @default(cuid())
+  productId String
+  label     String?
+  lengthMm  Int
+  widthMm   Int
+  heightMm  Int
+  weightG   Int?
+  quantity  Int     @default(1)
+  position  Int     @default(0)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------
+// FORNECEDORES E CUSTOS (uso interno — nunca exposto na loja)
+// ---------------------------------------------------------------------
+
+model Supplier {
+  id        String   @id @default(cuid())
+  legalName String // razão social
+  tradeName String?
+  cnpj      String?  @unique // somente dígitos/letras (aceita alfanumérico)
+  contact   String?
+  phone     String?
+  email     String?
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products ProductSupplier[]
+}
+
+enum LeadTime {
+  PRONTA_ENTREGA
+  D15
+  D30
+  D60
+  D90
+  IMPORTACAO
+}
+
+/// Vínculo produto ⇄ fornecedor. Atualizado por diferença (nunca apagado e recriado em bloco).
+model ProductSupplier {
+  id           String    @id @default(cuid())
+  productId    String
+  supplierId   String
+  supplierCode String? // código do produto no fornecedor
+  leadTime     LeadTime?
+  moq          Int? // pedido mínimo de compra junto ao fornecedor
+  costCents    Int? // custo da mercadoria (sem IPI)
+  ipiBps       Int? // IPI de compra em pontos-base (650 = 6,50%)
+  notes        String?
+  isPrincipal  Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  product  Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier Supplier              @relation(fields: [supplierId], references: [id])
+  history  SupplierCostHistory[]
+
+  @@unique([productId, supplierId])
+  @@index([supplierId])
+}
+
+/// Histórico permanente de custo/IPI por vínculo.
+model SupplierCostHistory {
+  id                String   @id @default(cuid())
+  productSupplierId String
+  costCents         Int?
+  ipiBps            Int?
+  changedById       String?
+  changedAt         DateTime @default(now())
+
+  productSupplier ProductSupplier @relation(fields: [productSupplierId], references: [id], onDelete: Cascade)
+
+  @@index([productSupplierId, changedAt])
+}
+
+enum CostItemCategory {
+  CORTE
+  TECIDO
+  GRAFICA
+  PLAQUINHA
+}
+
+/// Tabela de custos adicionais (corte, tecido, gráfica, plaquinha).
+model CostItem {
+  id         String           @id @default(cuid())
+  key        String           @unique
+  label      String
+  unit       String // "un", "m", "m²"…
+  priceCents Int
+  category   CostItemCategory
+  isActive   Boolean          @default(true)
+  updatedAt  DateTime         @updatedAt
+
+  products ProductCostItem[]
+}
+
+/// Custo adicional aplicado ao produto (um por categoria).
+model ProductCostItem {
+  id         String           @id @default(cuid())
+  productId  String
+  costItemId String
+  category   CostItemCategory
+  quantity   Decimal          @db.Decimal(12, 3)
+
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  costItem CostItem @relation(fields: [costItemId], references: [id])
+
+  @@unique([productId, category])
+}
+
+enum AvailabilityMode {
+  STOCK // vende apenas saldo disponível
+  MADE_TO_ORDER // sob encomenda: sem saldo, com prazo de produção
+  UNAVAILABLE
+}
+
+/// SKU vendável. Todo produto tem pelo menos uma variação.
+model ProductVariant {
+  id           String           @id @default(cuid())
+  productId    String
+  sku          String           @unique
+  name         String? // ex.: "Areia / 3,00 m"
+  color        String?
+  finish       String?
+  sizeLabel    String? // dimensão principal exibida no card
+  saleUnit     Int              @default(1) // unidade de venda (múltiplo de compra)
+  availability AvailabilityMode @default(STOCK)
+  leadTimeDays Int? // para sob encomenda
+  isActive     Boolean          @default(true)
+  position     Int              @default(0)
+  erpRef       String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  product      Product            @relation(fields: [productId], references: [id])
+  prices       Price[]
+  stock        StockLevel?
+  packages     PackageVolume[]
+  images       ProductImage[]
+  reservations StockReservation[]
+  cartItems    CartItem[]
+  orderItems   OrderItem[]
+
+  @@index([productId])
+}
+
+model ProductImage {
+  id         String  @id @default(cuid())
+  productId  String
+  variantId  String?
+  url        String
+  storageKey String? // arquivo no armazenamento (para remoção)
+  alt        String
+  width      Int?
+  height     Int?
+  position   Int     @default(0)
+
+  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+}
+
+/// Embalagem: um SKU pode ter vários volumes (ex.: mastro + cobertura + base).
+model PackageVolume {
+  id        String  @id @default(cuid())
+  variantId String
+  label     String?
+  lengthMm  Int
+  widthMm   Int
+  heightMm  Int
+  weightG   Int
+  quantity  Int     @default(1)
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+}
+
+/// Tabela de preço. Permite futuras tabelas por segmento sem refatoração.
+model PriceList {
+  id        String  @id @default(cuid())
+  code      String  @unique // ex.: "ATACADO"
+  name      String
+  isDefault Boolean @default(false)
+  prices    Price[]
+}
+
+model Price {
+  id          String    @id @default(cuid())
+  variantId   String
+  priceListId String
+  amountCents Int
+  validFrom   DateTime  @default(now())
+  validTo     DateTime?
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  priceList PriceList      @relation(fields: [priceListId], references: [id])
+
+  @@index([variantId, priceListId, validFrom])
+}
+
+// ---------------------------------------------------------------------
+// ESTOQUE
+// ---------------------------------------------------------------------
+
+model StockLevel {
+  variantId     String   @id
+  onHand        Int      @default(0) // saldo físico
+  reserved      Int      @default(0) // reservado por pedidos não pagos
+  minQty        Int      @default(0) // estoque mínimo (alerta de reposição)
+  avgCostCents  Int? // custo médio ponderado móvel (valor do estoque e CMV)
+  lastCostCents Int? // custo final unitário da última compra (custo de reposição)
+  updatedAt     DateTime @updatedAt
+  version       Int      @default(0) // controle otimista
+
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+}
+
+enum ReservationStatus {
+  ACTIVE
+  CONSUMED // pagamento confirmado → baixa definitiva
+  RELEASED // cancelado / expirado
+}
+
+model StockReservation {
+  id        String            @id @default(cuid())
+  variantId String
+  orderId   String
+  quantity  Int
+  status    ReservationStatus @default(ACTIVE)
+  expiresAt DateTime? // null = aguardando cotação de frete (expira por regra própria)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+  order   Order          @relation(fields: [orderId], references: [id])
+
+  @@index([status, expiresAt])
+}
+
+enum StockMovementType {
+  ENTRADA
+  SAIDA
+  AJUSTE
+  VENDA // baixa automática por pedido pago
+}
+
+/// Histórico permanente de estoque. Toda alteração do saldo físico gera um registro.
+model StockMovement {
+  id            String            @id @default(cuid())
+  variantId     String
+  type          StockMovementType @default(AJUSTE)
+  delta         Int
+  balanceAfter  Int?
+  reason        String
+  notes         String?
+  reference     String? // nº do pedido, nota fiscal…
+  unitCostCents Int? // compra: custo final unit.; venda: custo médio (CMV unitário)
+  actorId       String?
+  createdAt     DateTime          @default(now())
+
+  @@index([variantId, createdAt])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------
+// CARRINHO
+// ---------------------------------------------------------------------
+
+model Cart {
+  id        String     @id @default(cuid())
+  companyId String
+  userId    String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  items     CartItem[]
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+}
+
+/// O carrinho NÃO guarda preço: ele é sempre recalculado no servidor.
+model CartItem {
+  id        String @id @default(cuid())
+  cartId    String
+  variantId String
+  quantity  Int
+
+  cart    Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([cartId, variantId])
+}
+
+// ---------------------------------------------------------------------
+// PEDIDOS — quatro dimensões de estado independentes
+// ---------------------------------------------------------------------
+
+enum CommercialStatus {
+  CREATED
+  AWAITING_QUOTE
+  CONFIRMED
+  CANCELED
+}
+
+enum FinancialStatus {
+  NOT_STARTED
+  AWAITING_PAYMENT
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum LogisticStatus {
+  NOT_RELEASED
+  PREPARING
+  SHIPPED
+  DELIVERED
+}
+
+enum FiscalStatus {
+  NOT_ISSUED
+  ISSUING
+  AUTHORIZED
+  REJECTED
+  CANCELED
+}
+
+enum ShippingMode {
+  AUTOMATIC
+  MANUAL_QUOTE
+}
+
+model Order {
+  id               String           @id @default(cuid())
+  /// Sequência única compartilhada com Quote (doc_number_seq): pedido gerado de orçamento herda o número dele.
+  number           Int              @unique @default(dbgenerated("nextval('doc_number_seq'::regclass)"))
+  /// Código exibido: 3 letras do mês de criação + número (ex.: NOV-0041).
+  code             String           @unique
+  companyId        String
+  userId           String
+  commercialStatus CommercialStatus @default(CREATED)
+  financialStatus  FinancialStatus  @default(NOT_STARTED)
+  logisticStatus   LogisticStatus   @default(NOT_RELEASED)
+  fiscalStatus     FiscalStatus     @default(NOT_ISSUED)
+
+  // Snapshot do momento da compra (preservado mesmo que o cadastro mude)
+  companySnapshot Json // razão social, CNPJ etc.
+  addressSnapshot Json
+  priceListCode   String
+  commercialTerms Json? // condições de pagamento vigentes
+
+  subtotalCents  Int
+  shippingCents  Int? // null enquanto cotação não aprovada
+  discountCents  Int          @default(0)
+  totalCents     Int? // null enquanto frete indefinido
+  shippingMode   ShippingMode
+  idempotencyKey String       @unique // evita pedido duplicado no duplo clique
+  notes          String?
+  erpRef         String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  canceledAt     DateTime?
+  cancelReason   String?
+
+  company       Company              @relation(fields: [companyId], references: [id])
+  items         OrderItem[]
+  shippingQuote ShippingQuote?
+  payments      Payment[]
+  shipments     Shipment[]
+  fiscalDocs    FiscalDocument[]
+  history       OrderStatusHistory[]
+  reservations  StockReservation[]
+
+  @@index([companyId, createdAt])
+  @@index([commercialStatus])
+  @@index([financialStatus])
+}
+
+model OrderItem {
+  id               String           @id @default(cuid())
+  orderId          String
+  variantId        String
+  // Snapshot
+  sku              String
+  productName      String
+  variantName      String?
+  unitPriceCents   Int
+  quantity         Int
+  totalCents       Int
+  availability     AvailabilityMode
+  leadTimeDays     Int?
+  cogsCents        Int? // CMV: quantidade × custo médio no momento da baixa
+  packagesSnapshot Json
+
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+}
+
+enum QuoteStatus {
+  REQUESTED // cliente pediu
+  PROPOSED // administrativo enviou valor
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  AUTOMATIC // cotação automática escolhida no checkout
+}
+
+model ShippingQuote {
+  id           String      @id @default(cuid())
+  orderId      String      @unique
+  status       QuoteStatus
+  provider     String? // "melhor-envio", "manual"…
+  carrierName  String?
+  serviceName  String?
+  priceCents   Int?
+  deadlineDays Int?
+  externalId   String?
+  proposedById String?
+  proposedAt   DateTime?
+  respondedAt  DateTime?
+  validUntil   DateTime?
+  notes        String?
+  raw          Json?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Shipment {
+  id           String    @id @default(cuid())
+  orderId      String
+  carrierName  String
+  trackingCode String?
+  trackingUrl  String?
+  shippedAt    DateTime?
+  deliveredAt  DateTime? // apenas por integração/comprovante
+  createdAt    DateTime  @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+// ---------------------------------------------------------------------
+// PAGAMENTOS
+// ---------------------------------------------------------------------
+
+enum PaymentMethod {
+  PIX
+  BOLETO
+  CREDIT_CARD
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  CANCELED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CHARGEBACK
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  orderId       String
+  provider      String // "pagarme"
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  amountCents   Int
+  installments  Int           @default(1)
+  externalId    String?       @unique // ID da cobrança no gateway
+  // Dados de exibição — NUNCA dados de cartão
+  pixQrCode     String?
+  pixQrCodeUrl  String?
+  boletoUrl     String?
+  boletoLine    String?
+  dueAt         DateTime?
+  paidAt        DateTime?
+  failureReason String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+/// Todo webhook recebido é registrado ANTES de processar (idempotência + auditoria).
+model IntegrationEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  eventType   String
+  externalId  String // ID do evento no provedor
+  payload     Json
+  signatureOk Boolean
+  processedAt DateTime?
+  error       String?
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@unique([provider, externalId])
+}
+
+// ---------------------------------------------------------------------
+// FISCAL, HISTÓRICO, AUDITORIA E CONFIGURAÇÃO
+// ---------------------------------------------------------------------
+
+model FiscalDocument {
+  id        String       @id @default(cuid())
+  orderId   String
+  kind      String // "NFE"
+  number    String?
+  series    String?
+  accessKey String?
+  status    FiscalStatus
+  xmlUrl    String?
+  pdfUrl    String?
+  issuedAt  DateTime?
+  erpRef    String?
+  createdAt DateTime     @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+model OrderStatusHistory {
+  id        String   @id @default(cuid())
+  orderId   String
+  dimension String // COMMERCIAL | FINANCIAL | LOGISTIC | FISCAL
+  fromValue String?
+  toValue   String
+  actorType String // CUSTOMER | ADMIN | SYSTEM | WEBHOOK
+  actorId   String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String // ex.: "product.update", "company.block"
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+/// Configurações editáveis no painel (marca, contato, pagamento, frete…).
+/// Segredos NÃO ficam aqui — ficam em variáveis de ambiente.
+model Setting {
+  key       String   @id // "brand", "company", "contact", "payment", "shipping", "commercial"
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+// ---------------------------------------------------------------------
+// COMPRAS (entrada com nota fiscal → custo médio ponderado móvel)
+// ---------------------------------------------------------------------
+
+model Purchase {
+  id            String         @id @default(cuid())
+  supplierId    String
+  invoiceNumber String // nº da nota fiscal
+  issuedAt      DateTime
+  freightCents  Int            @default(0)
+  otherCents    Int            @default(0) // seguro, descarga e outras despesas da compra
+  totalCents    Int
+  notes         String?
+  createdById   String?
+  createdAt     DateTime       @default(now())
+  items         PurchaseItem[]
+
+  @@unique([supplierId, invoiceNumber]) // impede lançar a mesma nota duas vezes
+  @@index([issuedAt])
+}
+
+model PurchaseItem {
+  id             String @id @default(cuid())
+  purchaseId     String
+  variantId      String
+  quantity       Int
+  unitCostCents  Int // custo unitário da mercadoria (sem IPI)
+  ipiBps         Int    @default(0)
+  allocatedCents Int    @default(0) // frete + despesas rateados para a linha
+  unitTotalCents Int // custo final unitário que entra no estoque
+  stockBefore    Int
+  avgBeforeCents Int?
+  avgAfterCents  Int
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([variantId])
+}
+
+// ---------------------------------------------------------------------
+// ORÇAMENTOS (proposta comercial com dados e fotos do cadastro)
+// ---------------------------------------------------------------------
+
+enum ProposalStatus {
+  RASCUNHO
+  EMITIDO
+  ENVIADO
+  APROVADO
+  RECUSADO
+  EXPIRADO
+}
+
+enum FreightTerm {
+  COTAR
+  CIF
+  FOB
+}
+
+model Quote {
+  id                 String         @id @default(cuid())
+  number             Int            @unique @default(dbgenerated("nextval('doc_number_seq'::regclass)")) // mesma sequência dos pedidos
+  code               String         @unique // ex.: NOV-0041 (mês de criação + número)
+  companyId          String? // cliente cadastrado (opcional — aceita prospecção)
+  clientSnapshot     Json // cliente, CPF, CNPJ, IE, endereço, cidade/UF, CEP, contato, celular, e-mail, obra, aniversário, entrega
+  commercialSnapshot Json? // profissional, vendedor, gerente, celular, e-mail
+  orderNumber        String? // nº do pedido = código do orçamento (preenchido automaticamente)
+  deliveryDays       Int? // prazo de entrega em dias corridos
+  installmentPlan    String? // ex.: "entrada/30/60/90"
+  installmentValues  Json? // valores fixados por parcela, em centavos (null = automático), na ordem do parcelamento
+  extraDiscountCents Int            @default(0) // desconto geral em R$
+  issuedAt           DateTime
+  validDays          Int            @default(15)
+  paymentTerms       String
+  deliveryNote       String?
+  freightTerm        FreightTerm    @default(COTAR)
+  freightCents       Int            @default(0)
+  globalDiscountBps  Int            @default(0)
+  notes              String?
+  seller             String?
+  status             ProposalStatus @default(RASCUNHO)
+  subtotalCents      Int
+  discountCents      Int
+  totalCents         Int
+  costCents          Int? // uso interno (custo médio) — nunca impresso
+  createdById        String?
+  sale               Sale?
+  delivery           Delivery?
+  closedAt           DateTime? // data de fechamento: quando foi aprovado (fechado) ou perdido (recusado/expirado)
+  lostReason         String? // motivo da perda (opcional)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  items              QuoteItem[]
+
+  category String? // categoria interna do pedido
+
+  clientId String? // cliente do cadastro comercial (opcional)
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([category])
+  @@index([status, issuedAt])
+  @@index([createdAt])
+  @@index([closedAt])
+}
+
+/// Linha do orçamento: dados copiados do cadastro no momento da inclusão (ficam congelados).
+model QuoteItem {
+  id                String  @id @default(cuid())
+  quoteId           String
+  variantId         String?
+  position          Int
+  code              String
+  name              String
+  color             String?
+  specs             String?
+  imageUrl          String?
+  delivery          String?
+  quantity          Int
+  unitPriceCents    Int
+  discountBps       Int     @default(0)
+  totalCents        Int
+  unitCostCents     Int?
+  unitDiscountCents Int     @default(0) // desconto unitário em R$
+  fabricLine        String? // linha de tecido
+  paint             String? // pintura
+  measures          String? // L × P × A
+  finish            String? // acabamento da estrutura
+  cordage           String? // corda / tela / fibra
+  itemNotes         String? // observações do item
+  weightG           Int? // peso unitário (carga)
+  cubageM3          Float? // cubagem unitária (carga)
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+}
+
+// ======================================================================
+// Financeiro — vendas fechadas (vindas dos orçamentos) e contas a receber
+// ======================================================================
+enum SaleStatus {
+  ATIVA
+  CANCELADA
+}
+
+enum ReceivableStatus {
+  ABERTO
+  RECEBIDO
+  CANCELADO
+}
+
+/// Venda gerada quando o orçamento é fechado (coluna Fechados do funil). Dados congelados no fechamento.
+model Sale {
+  id              String       @id @default(cuid())
+  code            String // código do orçamento/pedido (ex.: NOV-0042)
+  quoteId         String?      @unique
+  clientName      String
+  clientDoc       String? // CNPJ ou CPF
+  seller          String?
+  closedAt        DateTime // data da venda (fechamento)
+  totalCents      Int
+  costCents       Int? // CMV estimado (custo médio no orçamento)
+  paymentTerms    String
+  installmentPlan String?
+  installmentValues Json? // valores fixados por parcela (cópia do orçamento no fechamento)
+  status          SaleStatus   @default(ATIVA)
+  cancelledAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  quote           Quote?       @relation(fields: [quoteId], references: [id])
+  receivables     Receivable[]
+  documents       FinanceDocument[]
+  notes           SaleNote[]
+
+  category String? // categoria interna do pedido
+
+  // Faturamento: uma NF por venda (o PDF/XML fica em documents, tipo NOTA_FISCAL)
+  invoiceNumber String?
+  invoiceDate   DateTime?
+  invoicedAt    DateTime?
+  invoicedBy    String?
+
+  @@index([invoiceNumber])
+  @@index([category])
+  @@index([closedAt])
+  @@index([status])
+}
+
+/// Parcela a receber da venda (gerada a partir do parcelamento do orçamento).
+model Receivable {
+  id            String           @id @default(cuid())
+  saleId        String
+  position      Int
+  label         String // "1/3 · 30 dias", "na entrega"…
+  dueDate       DateTime? // null = a definir (ex.: na entrega)
+  amountCents   Int
+  status        ReceivableStatus @default(ABERTO)
+  receivedAt    DateTime?
+  receivedCents Int?
+  method        String? // forma em que FOI recebido (Pix, boleto, cartão…)
+  note          String?
+  // Cobrança: forma prevista (null = deduzida da condição de pagamento) e emissão do boleto (manual)
+  plannedMethod  String?
+  boletoNumber   String? // nosso número ou linha digitável
+  boletoIssuedAt DateTime?
+  boletoIssuedBy String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  sale          Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  documents     FinanceDocument[]
+
+  @@index([status, dueDate])
+  @@index([saleId])
+}
+
+enum OtherIncomeStatus {
+  PREVISTA
+  RECEBIDA
+}
+
+/// Outras receitas (sem venda ligada): juros de aplicação, rendimentos, reembolsos etc. Categorias em Setting "finance.otherIncome".
+model OtherIncome {
+  id          String            @id @default(cuid())
+  description String
+  category    String
+  amountCents Int
+  status      OtherIncomeStatus @default(RECEBIDA)
+  date        DateTime // data do recebimento (RECEBIDA) ou data prevista (PREVISTA)
+  method      String?
+  note        String?
+  createdById String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([date])
+  @@index([status, date])
+}
+
+enum FinanceDocType {
+  NOTA_FISCAL
+  BOLETO
+  COMPROVANTE
+  OUTRO
+}
+
+/// Documento anexado à venda (NF, boleto, comprovante…). Arquivo em armazenamento PRIVADO, servido só a quem tem FINANCE.
+model FinanceDocument {
+  id           String         @id @default(cuid())
+  saleId       String
+  receivableId String? // boleto/comprovante de uma parcela específica
+  type         FinanceDocType
+  description  String? // ex.: "NF-e 1234 série 1"
+  fileName     String // nome original (exibição)
+  storageKey   String         @unique
+  mimeType     String
+  sizeBytes    Int
+  uploadedById String
+  uploadedBy   String // nome (exibição)
+  createdAt    DateTime       @default(now())
+  deletedAt    DateTime? // exclusão lógica: o arquivo é mantido para auditoria
+  sale         Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  receivable   Receivable?    @relation(fields: [receivableId], references: [id], onDelete: SetNull)
+
+  @@index([saleId, deletedAt])
+  @@index([receivableId])
+}
+
+/// Observação registrada na venda (histórico com autor e data).
+model SaleNote {
+  id         String   @id @default(cuid())
+  saleId     String
+  text       String
+  authorId   String
+  authorName String
+  createdAt  DateTime @default(now())
+  deletedAt  DateTime?
+  sale       Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId, createdAt])
+}
+
+// ======================================================================
+// Entregas — todo pedido fechado (orçamento em Fechados) gera uma entrega
+// ======================================================================
+enum DeliveryStatus {
+  A_AGENDAR
+  AGENDADA
+  EM_ROTA
+  ENTREGUE
+  CANCELADA
+}
+
+/// Entrega do pedido fechado. Cliente, endereço e itens são congelados no fechamento (editáveis aqui).
+model Delivery {
+  id            String         @id @default(cuid())
+  quoteId       String         @unique
+  code          String // nº do pedido (= nº do orçamento)
+  status        DeliveryStatus @default(A_AGENDAR)
+  clientName    String
+  clientDoc     String?
+  contact       String?
+  phone         String?
+  email         String?
+  address       String // endereço de entrega completo
+  city          String?
+  cep           String?
+  items         Json // [{ name, quantity, measures, finish, imageUrl }]
+  totalCents    Int
+  weightKg      Float?
+  cubageM3      Float?
+  closedAt      DateTime // data do fechamento do pedido
+  promisedAt    DateTime? // fechamento + prazo de entrega (dias corridos) do orçamento
+  scheduledAt   DateTime? // data agendada
+  carrier       String? // transportadora / responsável / veículo
+  trackingCode  String?
+  shippedAt     DateTime? // saiu para entrega
+  deliveredAt   DateTime?
+  receivedBy    String? // quem recebeu
+  notes         String?
+  cancelledAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  quote         Quote          @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  category String? // categoria interna do pedido
+
+  @@index([category])
+  @@index([status, promisedAt])
+  @@index([deliveredAt])
+}
+
+// ======================================================================
+// Mercado Livre — integração automática (OAuth). PENDENTE até configurar credenciais.
+// ======================================================================
+/// Conta do Mercado Livre conectada (uma por loja). Tokens criptografados (AES-256-GCM).
+model MlConnection {
+  id              String    @id @default("default")
+  sellerId        String
+  nickname        String?
+  accessTokenEnc  String
+  refreshTokenEnc String
+  expiresAt       DateTime
+  connectedById   String
+  connectedAt     DateTime  @default(now())
+  lastSyncAt      DateTime?
+  lastSyncError   String?
+  updatedAt       DateTime  @updatedAt
+}
+
+/// Recebimento de uma venda no Mercado Livre (um registro por pagamento do pedido).
+model MlReceipt {
+  id                String    @id @default(cuid())
+  paymentId         String    @unique
+  orderId           String
+  packId            String?
+  orderStatus       String // paid, cancelled…
+  paymentStatus     String // approved, refunded…
+  saleDate          DateTime
+  buyerNickname     String?
+  itemsSummary      String
+  grossCents        Int // valor do pagamento (transaction_amount)
+  shippingCents     Int? // frete pago pelo comprador neste pagamento (shipping_cost)
+  feeCents          Int? // tarifa de venda do Mercado Livre (marketplace_fee)
+  netCents          Int? // líquido informado pelo Mercado Pago (net_received_amount), quando disponível
+  releaseDate       DateTime? // money_release_date
+  releaseStatus     String? // pending | released
+  raw               Json // resposta original (auditoria)
+  syncedAt          DateTime  @default(now())
+
+  @@index([saleDate])
+  @@index([releaseDate])
+  @@index([orderId])
+}
+
+/// Item (anúncio) de um pedido do Mercado Livre — base para o acompanhamento por categoria de anúncio.
+model MlOrderItem {
+  id             String   @id @default(cuid())
+  orderId        String
+  position       Int // ordem do item no pedido
+  itemId         String // ex.: MLB123…
+  title          String
+  categoryId     String?
+  quantity       Int
+  unitPriceCents Int // unit_price (após descontos)
+  saleFeeCents   Int? // sale_fee por unidade (comissão)
+  orderStatus    String
+  saleDate       DateTime
+  syncedAt       DateTime @default(now())
+
+  @@unique([orderId, position])
+  @@index([categoryId, saleDate])
+}
+
+/// Cache dos nomes de categoria do Mercado Livre (GET /categories/{id}).
+model MlCategory {
+  id        String   @id
+  name      String
+  path      String // "Casa, Móveis e Decoração > Jardim > …"
+  fetchedAt DateTime @default(now())
+}
+
+// ======================================================================
+// Financeiro — Saídas (contas a pagar e custos do dia a dia)
+// ======================================================================
+enum ExpenseStatus {
+  A_PAGAR
+  PAGA
+}
+
+/// Saída (despesa/conta). Parceladas ou recorrentes compartilham `seriesId` e têm `seriesLabel` (ex.: "2/12").
+model Expense {
+  id           String            @id @default(cuid())
+  description  String
+  category     String // categorias em Setting "finance.expenseCategories"
+  payee        String? // fornecedor / favorecido
+  amountCents  Int
+  dueDate      DateTime
+  status       ExpenseStatus     @default(A_PAGAR)
+  paidAt       DateTime?
+  paidCents    Int? // valor efetivamente pago (juros/desconto)
+  method       String?
+  note         String?
+  seriesId     String?
+  seriesLabel  String?
+  createdById  String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  documents    ExpenseDocument[]
+
+  @@index([status, dueDate])
+  @@index([paidAt])
+  @@index([seriesId])
+}
+
+/// Anexo da saída (boleto, NF, comprovante) — armazenamento PRIVADO, servido só a quem tem FINANCE.
+model ExpenseDocument {
+  id           String         @id @default(cuid())
+  expenseId    String
+  type         FinanceDocType
+  fileName     String
+  storageKey   String         @unique
+  mimeType     String
+  sizeBytes    Int
+  uploadedById String
+  uploadedBy   String
+  createdAt    DateTime       @default(now())
+  deletedAt    DateTime?
+  expense      Expense        @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId, deletedAt])
+}
+
+// ---------------------------------------------------------------------
+// CADASTRO COMERCIAL DE CLIENTES (orçamentos) — PF ou PJ, importável por planilha.
+// Separado de Company (contas da loja, com login): importar não cria acesso nem bloqueia o cadastro no site.
+// ---------------------------------------------------------------------
+enum PersonType {
+  PJ
+  PF
+}
+
+model Client {
+  id                String     @id @default(cuid())
+  personType        PersonType @default(PJ)
+  name              String // razão social ou nome completo
+  tradeName         String? // nome fantasia
+  cnpj              String?    @unique // somente dígitos
+  cpf               String?    @unique // somente dígitos
+  stateRegistration String?
+  contactName       String?
+  mobile            String?
+  phone             String?
+  email             String?
+  street            String? // rua, número e complemento
+  district          String?
+  city              String?
+  state             String? // UF
+  zipCode           String? // somente dígitos
+  deliveryAddress   String?
+  birthday          String? // dd/mm
+  notes             String?
+  source            String     @default("IMPORT") // IMPORT | MANUAL
+  createdById       String
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  quotes            Quote[]
+
+  @@index([name])
+}

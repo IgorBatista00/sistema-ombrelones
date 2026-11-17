@@ -1,0 +1,10 @@
+import type { SVGProps } from "react";
+const I = (p: SVGProps<SVGSVGElement>) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden {...p} />;
+export const SearchIcon = (p: SVGProps<SVGSVGElement>) => <I {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></I>;
+export const UserIcon = (p: SVGProps<SVGSVGElement>) => <I {...p}><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" /></I>;
+export const BagIcon = (p: SVGProps<SVGSVGElement>) => <I {...p}><path d="M5 8h14l-1 13H6L5 8Z" /><path d="M9 8V6a3 3 0 0 1 6 0v2" /></I>;
+export const MenuIcon = (p: SVGProps<SVGSVGElement>) => <I {...p}><path d="M4 8h16M4 16h16" /></I>;
+export const CloseIcon = (p: SVGProps<SVGSVGElement>) => <I {...p}><path d="M6 6l12 12M18 6 6 18" /></I>;
+export const LockIcon = (p: SVGProps<SVGSVGElement>) => <I {...p}><rect x="5" y="11" width="14" height="10" rx="1.5" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></I>;
+export const ArrowIcon = (p: SVGProps<SVGSVGElement>) => <I {...p}><path d="M5 12h14M13 6l6 6-6 6" /></I>;
+export const ChevronIcon = (p: SVGProps<SVGSVGElement>) => <I {...p}><path d="m9 6 6 6-6 6" /></I>;
