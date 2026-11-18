@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireAdminAny } from "@/modules/auth/session";
+import { purchaseOrdersForDay } from "@/modules/purchase-orders/service";
 import { myDay } from "@/modules/admin/my-day";
 import { itemsSummary, resolveDay } from "@/modules/admin/my-day-rules";
 import { DELIVERY_STATUS } from "@/modules/deliveries/rules";
@@ -55,9 +56,10 @@ function ItemsTable({ items, money }: { items: { code: string | null; name: stri
 }
 
 export default async function MyDay({ searchParams }: { searchParams: Promise<{ data?: string }> }) {
-  const { admin } = await requireAdminAny(["DASHBOARD", "ORDERS", "LOGISTICS", "FINANCE"]);
+  const { admin } = await requireAdminAny(["DASHBOARD", "ORDERS", "LOGISTICS", "FINANCE", "STOCK"]);
   const d = resolveDay((await searchParams).data);
-  const m = await myDay(d.day, admin.permissions);
+  const canStock = admin.permissions.includes("STOCK");
+  const [m, po] = await Promise.all([myDay(d.day, admin.permissions), canStock ? purchaseOrdersForDay(d.day) : null]);
   const title = new Date(`${d.day}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const quoteTotal = m.quotes.rows.length;
   const dl = m.deliveries, toDeliverCount = dl.today.length + dl.late.length;
@@ -83,6 +85,7 @@ export default async function MyDay({ searchParams }: { searchParams: Promise<{ 
         {m.can.sales && <Kpi label={`Vendas ${day}`} value={formatBRL(m.sales.total)} hint={`${m.sales.count} venda(s) · ${m.soldItems.reduce((a, i) => a + i.quantity, 0)} item(ns)${m.sales.ml.length ? ` · ${formatBRL(m.sales.byChannel.ml)} no Mercado Livre` : ""}`} href="#vendas" />}
         {m.can.orders && <Kpi label={`Orçamentos feitos ${day}`} value={String(quoteTotal)} hint={quoteTotal ? `${formatBRL(m.quotes.total)} orçados` : "Nenhum orçamento"} href="#orcamentos" />}
         {m.can.logistics && <Kpi label="Entregas" value={String(toDeliverCount)} hint={`${dl.today.length} para ${day} · ${dl.late.length} atrasada(s) · ${dl.delivered.length} entregue(s)${dl.undated ? ` · ${dl.undated} sem data` : ""}`} href="#entregas" tone={dl.late.length ? "danger" : undefined} />}
+        {po && <Kpi label="Compras a chegar" value={String(po.today.length + po.late.length)} hint={`${po.today.length} prevista(s) para ${day} · ${po.late.length} atrasada(s) · ${po.received.length} entrega(s) recebida(s)`} href="#compras" tone={po.late.length ? "danger" : undefined} />}
         {m.can.finance && <Kpi label={`Vencendo ${day}`} value={formatBRL(m.due.receivableTotal)} hint={`a receber (${m.due.receivables.length}) · ${formatBRL(m.due.expenseTotal)} a pagar (${m.due.expenses.length})`} href="#vencimentos" />}
       </div>
 
@@ -193,6 +196,29 @@ export default async function MyDay({ searchParams }: { searchParams: Promise<{ 
                 </li>))}</ul>
             )}
             <p className="mt-3 text-right"><Link className="link text-xs" href={`/admin/financeiro?aba=saidas&de=${d.day}&ate=${d.day}`}>Dar baixa nas contas</Link></p>
+          </Section>
+        )}
+
+        {po && (
+          <Section id="compras" title="Compras a chegar (ordens de compra)" count={`${po.today.length + po.late.length} a chegar · ${po.received.length} recebida(s)`} action={<Link className="link text-xs" href="/admin/ordens-compra">Abrir Ordens de compra</Link>}>
+            {po.today.length + po.late.length + po.received.length === 0 ? <Empty>Nenhuma compra prevista para chegar {day}.</Empty> : (
+              <ul className="divide-y divide-line text-sm">
+                {[...po.late, ...po.today].map((r) => (
+                  <li key={r.id} className="py-2.5" data-po-day={r.code}>
+                    <div className="flex flex-wrap items-center gap-2"><Link className="font-medium hover:underline" href={`/admin/ordens-compra/${r.id}`}>{r.code}</Link> · {r.supplierName}
+                      {r.late ? <Badge tone="danger">Atrasada {r.lateDays} dia(s) · era {dBR(r.due!)}</Badge> : <Badge tone="warning">Prevista para {day}</Badge>}{r.state === "PARCIAL" && <Badge tone="neutral">Parcial</Badge>}</div>
+                    <p className="mt-0.5 text-xs">{r.items.filter((i) => i.pending > 0).slice(0, 4).map((i) => `${i.pending.toLocaleString("pt-BR", { maximumFractionDigits: 3 })} ${i.unit} ${i.description}`).join(" · ")}</p>
+                    {r.buyer && <p className="text-xs text-muted">Responsável: {r.buyer}</p>}
+                  </li>
+                ))}
+                {po.received.map((r) => (
+                  <li key={r.id} className="py-2.5" data-po-received={r.code}>
+                    <div className="flex flex-wrap items-center gap-2"><Link className="font-medium hover:underline" href={`/admin/ordens-compra/${r.orderId}`}>{r.code}</Link> · {r.supplierName} <Badge tone="success">Recebida{r.invoiceNumber ? ` · NF ${r.invoiceNumber}` : ""}</Badge></div>
+                    <p className="mt-0.5 text-xs">{r.lines.map((l) => `${l.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 3 })} ${l.unit} ${l.description}`).join(" · ")}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Section>
         )}
 

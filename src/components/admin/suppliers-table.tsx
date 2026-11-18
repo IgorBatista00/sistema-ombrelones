@@ -43,7 +43,7 @@ export function SuppliersTable({ rows, q, showInactive }: { rows: Row[]; q: stri
                     ? <span className="text-danger">{s.products ? "Desativar (tem produtos)?" : "Excluir?"} <button className="font-medium" disabled={pending} onClick={() => start(async () => {
                         const r = await removeSupplierAction(s.id);
                         setConfirmId(null);
-                        setMsg(r.ok ? (r.data.deactivated ? `Fornecedor desativado — vinculado a ${r.data.links} produto(s), histórico preservado.` : "Fornecedor excluído.") : r.error);
+                        setMsg(r.ok ? (r.data.deactivated ? "Fornecedor desativado — tem produtos, compras ou ordens de compra vinculados; o histórico foi preservado." : "Fornecedor excluído.") : r.error);
                         router.refresh();
                       })}>Sim</button> <button className="text-muted" onClick={() => setConfirmId(null)}>Não</button></span>
                     : s.isActive && <button className="text-danger hover:underline" onClick={() => setConfirmId(s.id)}>Excluir</button>}

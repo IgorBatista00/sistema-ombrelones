@@ -9,7 +9,7 @@ import { AdminNav } from "@/components/admin/nav";
 export const metadata: Metadata = { title: "Painel", robots: { index: false, follow: false } };
 
 const MENU: { href: string; label: string; perm: AdminPermission | AdminPermission[] }[] = [
-  { href: "/admin/meu-dia", label: "Meu dia", perm: ["DASHBOARD", "ORDERS", "LOGISTICS", "FINANCE"] },
+  { href: "/admin/meu-dia", label: "Meu dia", perm: ["DASHBOARD", "ORDERS", "LOGISTICS", "FINANCE", "STOCK"] },
   { href: "/admin", label: "Dashboard", perm: "DASHBOARD" },
   { href: "/admin/pedidos", label: "Pedidos", perm: "ORDERS" },
   { href: "/admin/orcamentos", label: "Orçamentos", perm: "ORDERS" },
@@ -19,6 +19,7 @@ const MENU: { href: string; label: string; perm: AdminPermission | AdminPermissi
   { href: "/admin/produtos", label: "Produtos", perm: "PRODUCTS" },
   { href: "/admin/tabela", label: "Tabela", perm: "PRODUCTS" },
   { href: "/admin/estoque", label: "Estoque", perm: "STOCK" },
+  { href: "/admin/ordens-compra", label: "Ordens de compra", perm: "STOCK" },
   { href: "/admin/fornecedores", label: "Fornecedores", perm: "PRODUCTS" },
   { href: "/admin/tabela-custos", label: "Tabela de custos", perm: "PRODUCTS" },
   { href: "/admin/clientes", label: "Clientes", perm: "CUSTOMERS" },

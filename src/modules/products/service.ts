@@ -299,7 +299,7 @@ export async function saveSupplier(actorId: string, raw: unknown) {
 
 /** Fornecedor com produtos vinculados é desativado (preserva histórico); sem vínculos, é excluído. */
 export async function removeSupplier(actorId: string, id: string) {
-  const links = await db.productSupplier.count({ where: { supplierId: id } });
+  const links = (await db.productSupplier.count({ where: { supplierId: id } })) + (await db.purchaseOrder.count({ where: { supplierId: id } })) + (await db.purchase.count({ where: { supplierId: id } }));
   if (links) await db.supplier.update({ where: { id }, data: { isActive: false } });
   else await db.supplier.delete({ where: { id } });
   await db.auditLog.create({ data: { actorId, action: links ? "supplier.deactivate" : "supplier.delete", entity: "Supplier", entityId: id } });
