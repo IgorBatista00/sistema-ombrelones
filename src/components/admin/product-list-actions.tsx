@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { sheetTooBig } from "@/lib/upload-client";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { deleteProductAction, deleteProductsAction } from "@/modules/admin/product-actions";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ export function ImportProductsButton() {
   const send = (mode: "preview" | "commit") => start(async () => {
     if (!file) return;
     setError(null);
+    const tooBig = sheetTooBig(file); if (tooBig) return setError(tooBig);
     const fd = new FormData(); fd.append("file", file); fd.append("mode", mode);
     const res = await fetch("/api/admin/products/import", { method: "POST", body: fd });
     const json = await res.json().catch(() => ({}));

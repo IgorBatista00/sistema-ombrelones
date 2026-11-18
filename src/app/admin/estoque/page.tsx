@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
+import { expireReservationsIfDue } from "@/modules/orders/expire-lazy";
 import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
@@ -16,6 +17,7 @@ const STATE = { zero: ["Zerado", "danger"], low: ["Abaixo do mínimo", "warning"
 
 export default async function StockPage({ searchParams }: { searchParams: Promise<StockFilters> }) {
   await requireAdminPage("STOCK");
+  await expireReservationsIfDue();
   const sp = await searchParams;
   const display = await getStockDisplay();
   const [rows, all, categories, moves] = await Promise.all([listStock(sp, display), listStock({}, display), db.category.findMany({ orderBy: { position: "asc" }, select: { id: true, name: true } }), recentMovements(undefined, 12)]);

@@ -12,6 +12,7 @@ import { reservationExpiry, type PaymentMethodKey } from "@/modules/inventory/av
 import { consumeReservations, extendReservations, releaseReservations, reserveStock } from "@/modules/inventory/reservations";
 import { transition } from "./transition";
 import { docCode, nextDocNumber } from "@/lib/doc-code";
+import { appUrl } from "@/lib/app-url";
 
 type BuyerCtx = { user: { id: string; name: string; email: string }; company: { id: string; cnpj: string; legalName: string; tradeName: string | null } };
 
@@ -128,11 +129,11 @@ export async function createOrder(ctx: BuyerCtx, input: z.infer<typeof checkoutS
     return created;
   });
 
-  const url = `${process.env.APP_URL}/minha-conta/pedidos/${order.id}`;
+  const url = `${appUrl()}/minha-conta/pedidos/${order.id}`;
   await sendEmail(ctx.user.email, { kind: "order-created", orderNumber: order.code, url });
   if (!shipping && process.env.ADMIN_NOTIFICATION_EMAIL) {
     await sendEmail(process.env.ADMIN_NOTIFICATION_EMAIL, {
-      kind: "quote-requested-admin", orderNumber: order.code, company: ctx.company.legalName, url: `${process.env.APP_URL}/admin/logistica`,
+      kind: "quote-requested-admin", orderNumber: order.code, company: ctx.company.legalName, url: `${appUrl()}/admin/logistica`,
     });
   }
   return order;
@@ -162,7 +163,7 @@ export async function proposeQuote(adminUserId: string, orderId: string, input: 
     await tx.auditLog.create({ data: { actorId: adminUserId, action: "quote.propose", entity: "Order", entityId: orderId, after: input as unknown as Prisma.InputJsonValue } });
   });
   const buyer = await db.user.findUnique({ where: { id: order.userId } });
-  if (buyer) await sendEmail(buyer.email, { kind: "quote-available", orderNumber: order.code, url: `${process.env.APP_URL}/minha-conta/pedidos/${order.id}` });
+  if (buyer) await sendEmail(buyer.email, { kind: "quote-available", orderNumber: order.code, url: `${appUrl()}/minha-conta/pedidos/${order.id}` });
 }
 
 export async function respondQuote(ctx: BuyerCtx, orderId: string, accept: boolean) {
@@ -285,7 +286,7 @@ export async function processPaymentWebhook(providerName: string, req: Request) 
     await db.integrationEvent.update({ where: { id: record.id }, data: { processedAt: new Date(), error: null } });
     if (order?.paid) {
       const buyer = await db.user.findUnique({ where: { id: order.userId } });
-      if (buyer) await sendEmail(buyer.email, { kind: "payment-confirmed", orderNumber: order.code, url: `${process.env.APP_URL}/minha-conta/pedidos/${order.id}` });
+      if (buyer) await sendEmail(buyer.email, { kind: "payment-confirmed", orderNumber: order.code, url: `${appUrl()}/minha-conta/pedidos/${order.id}` });
     }
     return { ok: true };
   } catch (e) {

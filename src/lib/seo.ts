@@ -1,6 +1,7 @@
+import { appUrl } from "@/lib/app-url";
 /** SEO — funções puras (testáveis): URLs absolutas, títulos, descrições e dados estruturados. */
 
-export const siteUrl = () => (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+export const siteUrl = () => (appUrl()).replace(/\/+$/, "");
 /** "/api/media/x.jpg" → "https://dominio/api/media/x.jpg" (dados estruturados exigem URL completa). */
 export const absUrl = (u: string) => (/^https?:\/\//.test(u) ? u : `${siteUrl()}${u.startsWith("/") ? "" : "/"}${u}`);
 

@@ -12,10 +12,11 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   images: {
     formats: ["image/avif", "image/webp"],
-    // Adicione aqui o domínio do armazenamento de imagens (S3, R2, Cloudinary…)
-    remotePatterns: process.env.IMAGE_CDN_HOST
-      ? [{ protocol: "https", hostname: process.env.IMAGE_CDN_HOST }]
-      : [],
+    // Fotos enviadas em produção ficam no Vercel Blob (store público); IMAGE_CDN_HOST para um CDN próprio, se houver.
+    remotePatterns: [
+      { protocol: "https", hostname: "*.public.blob.vercel-storage.com" },
+      ...(process.env.IMAGE_CDN_HOST ? [{ protocol: "https" as const, hostname: process.env.IMAGE_CDN_HOST }] : []),
+    ],
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

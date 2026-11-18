@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { expireReservationsIfDue } from "@/modules/orders/expire-lazy";
 import { route, parseBody } from "@/lib/route";
 import { requireBuyer } from "@/modules/auth/session";
 import { addToCart, getPricedCart, setCartItem } from "@/modules/cart/service";
 
 const item = z.object({ variantId: z.string().min(1), quantity: z.number().int().min(0).max(100_000) });
 
-export const GET = route(async () => getPricedCart(await requireBuyer()));
+export const GET = route(async () => { const ctx = await requireBuyer(); await expireReservationsIfDue(); return getPricedCart(ctx); });
 /** POST soma à quantidade existente; PATCH define a quantidade (0 remove). */
 export const POST = route(async (req) => {
   const ctx = await requireBuyer();

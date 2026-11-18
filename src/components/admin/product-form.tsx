@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
+import { appendFiles } from "@/lib/upload-client";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { saveProductFormAction, saveSupplierAction } from "@/modules/admin/product-actions";
@@ -106,13 +107,13 @@ export function ProductForm(props: {
     setImgNotice(skipped > 0 ? `Limite de ${MAX_PRODUCT_IMAGES} fotos por produto: ${chosen.length === 1 ? "foi adicionada 1 foto" : `foram adicionadas ${chosen.length} fotos`} e ${skipped === 1 ? "1 ficou de fora" : `${skipped} ficaram de fora`}.` : null);
     setUploading(true); setError(null);
     const fd = new FormData();
-    chosen.forEach((f) => fd.append("files", f));
     try {
+      await appendFiles(fd, chosen, "image");
       const res = await fetch("/api/admin/uploads", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok) setError(`Erro no upload: ${json.error?.message ?? "tente novamente"}`);
       else set("images", [...v.images, ...json.data.map((f: { url: string; key: string }) => ({ url: f.url, storageKey: f.key, alt: "" }))].slice(0, MAX_PRODUCT_IMAGES));
-    } catch { setError("Erro no upload: falha de conexão."); }
+    } catch (e) { setError(`Erro no upload: ${e instanceof Error && e.message !== "Failed to fetch" ? e.message : "falha de conexão."}`); }
     setUploading(false);
   }
   const moveImg = (i: number, d: number) => { const a = [...v.images]; const j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; set("images", a); };

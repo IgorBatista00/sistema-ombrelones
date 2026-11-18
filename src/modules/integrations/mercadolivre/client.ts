@@ -15,9 +15,9 @@ const MP_API = "https://api.mercadopago.com";
 
 export function mlConfig() {
   const clientId = process.env.MERCADOLIVRE_CLIENT_ID ?? "", clientSecret = process.env.MERCADOLIVRE_CLIENT_SECRET ?? "";
-  const appUrl = (process.env.APP_URL ?? "").replace(/\/$/, "");
-  const missing = [!clientId && "MERCADOLIVRE_CLIENT_ID", !clientSecret && "MERCADOLIVRE_CLIENT_SECRET", !appUrl && "APP_URL", !hasEncryptionKey() && "APP_ENCRYPTION_KEY"].filter(Boolean) as string[];
-  return { clientId, clientSecret, redirectUri: `${appUrl}/api/admin/integracoes/mercadolivre/callback`, missing, configured: missing.length === 0 };
+  const base = (process.env.APP_URL ?? "").trim().replace(/\/$/, ""); // o endereço de retorno cadastrado no Mercado Livre precisa ser fixo (domínio de produção)
+  const missing = [!clientId && "MERCADOLIVRE_CLIENT_ID", !clientSecret && "MERCADOLIVRE_CLIENT_SECRET", !base && "APP_URL", !hasEncryptionKey() && "APP_ENCRYPTION_KEY"].filter(Boolean) as string[];
+  return { clientId, clientSecret, redirectUri: `${base}/api/admin/integracoes/mercadolivre/callback`, missing, configured: missing.length === 0 };
 }
 export const isMlConfigured = () => mlConfig().configured;
 

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { dayRange } from "@/modules/quotes/funnel";
 import { deleteDocumentFile, saveDocument } from "@/modules/integrations/storage/private";
+import { formUploads } from "@/modules/integrations/storage/uploads";
 import { RECEIPT_METHODS } from "./receivables";
 import { DOC_TYPES, type DocTypeKey } from "./document-rules";
 import { DEFAULT_EXPENSE_CATEGORIES, buildExpenseSeries, expenseState, expenseSummary, type ExpenseState } from "./expense-rules";
@@ -120,7 +121,7 @@ export async function deleteExpense(actorId: string, id: string, future: boolean
 export async function attachExpenseDocument(actor: { id: string; name: string }, form: FormData) {
   const m = z.object({ expenseId: z.string().min(1), type: z.enum(Object.keys(DOC_TYPES) as [DocTypeKey, ...DocTypeKey[]]) }).safeParse({ expenseId: form.get("expenseId"), type: form.get("type") });
   if (!m.success) throw new AppError("VALIDATION", "Escolha o tipo do documento.", 422);
-  const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0).slice(0, 10);
+  const files = formUploads(form).slice(0, 10);
   if (!files.length) throw new AppError("NO_FILES", "Selecione o arquivo.");
   if (!(await db.expense.findUnique({ where: { id: m.data.expenseId }, select: { id: true } }))) throw new AppError("NOT_FOUND", "Saída não encontrada.", 404);
   const out = [];

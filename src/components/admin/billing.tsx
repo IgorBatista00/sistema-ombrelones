@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { appendFiles } from "@/lib/upload-client";
 import { useRef, useState, useTransition } from "react";
 import { clearBoletoAction, clearInvoiceAction, setPlannedMethodAction } from "@/modules/admin/finance-actions";
 import { RECEIPT_METHODS } from "@/modules/finance/receivables";
@@ -41,7 +42,8 @@ export function InvoiceButton({ saleId, code, client, current, compact }: { sale
   const router = useRouter();
   const save = async () => {
     setBusy(true); setErr(null);
-    const fd = new FormData(); fd.set("kind", "nf"); fd.set("saleId", saleId); fd.set("number", f.number); fd.set("date", f.date); files.forEach((x) => fd.append("files", x));
+    const fd = new FormData(); fd.set("kind", "nf"); fd.set("saleId", saleId); fd.set("number", f.number); fd.set("date", f.date);
+    try { await appendFiles(fd, files, "doc"); } catch (x) { setBusy(false); return setErr(x instanceof Error ? x.message : "Falha no envio."); }
     const e = await post(fd); setBusy(false);
     if (e) return setErr(e);
     setOpen(false); setFiles([]); router.refresh();
@@ -75,7 +77,8 @@ export function BoletoButton({ receivableId, code, client, label, amount, due, c
   const router = useRouter();
   const save = async () => {
     setBusy(true); setErr(null);
-    const fd = new FormData(); fd.set("kind", "boleto"); fd.set("receivableId", receivableId); fd.set("number", num); files.forEach((x) => fd.append("files", x));
+    const fd = new FormData(); fd.set("kind", "boleto"); fd.set("receivableId", receivableId); fd.set("number", num);
+    try { await appendFiles(fd, files, "doc"); } catch (x) { setBusy(false); return setErr(x instanceof Error ? x.message : "Falha no envio."); }
     const e = await post(fd); setBusy(false);
     if (e) return setErr(e);
     setOpen(false); setFiles([]); router.refresh();

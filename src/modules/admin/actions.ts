@@ -15,6 +15,7 @@ import { proposeQuote, proposeQuoteSchema } from "@/modules/orders/service";
 import { transition } from "@/modules/orders/transition";
 import { releaseReservations } from "@/modules/inventory/reservations";
 import { sendEmail } from "@/modules/integrations/email";
+import { appUrl } from "@/lib/app-url";
 
 export type ActionState = { ok?: boolean; error?: string } | null;
 const fail = (e: unknown): ActionState => ({ error: e instanceof AppError ? e.message : e instanceof z.ZodError ? e.issues[0]?.message : "Erro inesperado." });
@@ -60,7 +61,7 @@ export async function logisticAction(_: ActionState, fd: FormData): Promise<Acti
     });
     const order = await db.order.findUniqueOrThrow({ where: { id: orderId }, include: { shipments: true } });
     const buyer = await db.user.findUnique({ where: { id: order.userId } });
-    const url = `${process.env.APP_URL}/minha-conta/pedidos/${order.id}`;
+    const url = `${appUrl()}/minha-conta/pedidos/${order.id}`;
     if (buyer && to === "SHIPPED") await sendEmail(buyer.email, { kind: "order-shipped", orderNumber: order.code, url, tracking: order.shipments.at(-1)?.trackingCode });
     if (buyer && to === "DELIVERED") await sendEmail(buyer.email, { kind: "order-delivered", orderNumber: order.code, url });
     revalidatePath(`/admin/pedidos/${orderId}`);

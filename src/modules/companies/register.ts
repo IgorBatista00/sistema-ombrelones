@@ -9,6 +9,7 @@ import { getCnpjProvider } from "@/modules/integrations/cnpj";
 import { isValidCnpj, normalizeCnpj } from "./cnpj";
 import { assessRisk, REVIEW_THRESHOLD } from "./risk";
 import type { Prisma } from "@prisma/client";
+import { appUrl } from "@/lib/app-url";
 
 export const registerSchema = z.object({
   cnpj: z.string().transform(normalizeCnpj).refine(isValidCnpj, "CNPJ inválido. Confira os números."),
@@ -90,7 +91,7 @@ export async function registerCompany(input: z.infer<typeof registerSchema>, met
   });
 
   const token = await issueToken(user.id, "EMAIL_VERIFICATION");
-  await sendEmail(user.email, { kind: "verify-email", name: user.name, url: `${process.env.APP_URL}/verificar-email?token=${token}` });
+  await sendEmail(user.email, { kind: "verify-email", name: user.name, url: `${appUrl()}/verificar-email?token=${token}` });
   return { userId: user.id, needsReview: risk.needsReview };
 }
 

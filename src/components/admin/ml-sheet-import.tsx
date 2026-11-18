@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { sheetTooBig } from "@/lib/upload-client";
 import { useRef, useState, useTransition } from "react";
 import type { MlImportPreview } from "@/modules/integrations/mercadolivre/sheet-import";
 import { formatBRL } from "@/lib/money";
@@ -16,6 +17,7 @@ export function MlSheetImportButton() {
   const router = useRouter();
   const send = (mode: "preview" | "commit") => start(async () => {
     if (!file) return; setErr(null);
+    const tooBig = sheetTooBig(file); if (tooBig) return setErr(tooBig);
     const fd = new FormData(); fd.append("file", file); fd.append("mode", mode);
     const r = await fetch("/api/admin/financeiro/mercadolivre/importar", { method: "POST", body: fd });
     const j = await r.json().catch(() => ({}));

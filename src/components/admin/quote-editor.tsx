@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { appendFiles } from "@/lib/upload-client";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { duplicateQuoteAction, saveQuoteAction } from "@/modules/admin/quote-actions";
@@ -18,13 +19,14 @@ export function QuoteEditor({ initial, products, clients, company, categories = 
   const router = useRouter();
 
   async function upload(file: File) {
-    const fd = new FormData(); fd.append("files", file);
+    const fd = new FormData();
     try {
+      await appendFiles(fd, [file], "image");
       const res = await fetch("/api/admin/uploads", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok) { setError(`Erro no upload: ${json.error?.message ?? "tente novamente"}`); return null; }
       return json.data[0]?.url as string;
-    } catch { setError("Erro no upload: falha de conexão."); return null; }
+    } catch (e) { setError(`Erro no upload: ${e instanceof Error && e.message !== "Failed to fetch" ? e.message : "falha de conexão."}`); return null; }
   }
   const save = (generate: boolean) => start(async () => {
     setError(null);

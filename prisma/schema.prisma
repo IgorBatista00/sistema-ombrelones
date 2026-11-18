@@ -12,8 +12,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // na Vercel: URL "pooled" do banco
+  directUrl = env("DATABASE_URL_UNPOOLED") // conexão direta, usada só pelas migrações
 }
 
 // ---------------------------------------------------------------------

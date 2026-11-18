@@ -1,10 +1,12 @@
 node_modules
 .next
 .env
-.env.local
+.env.*
+!.env.example
+.vercel
 *.tsbuildinfo
 next-env.d.ts
-storage/
+/storage/
 
 # extras
 scripts/tmp/

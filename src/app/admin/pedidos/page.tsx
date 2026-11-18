@@ -1,4 +1,5 @@
 import { parseDocNumber } from "@/lib/doc-code";
+import { expireReservationsIfDue } from "@/modules/orders/expire-lazy";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { requireAdminPage } from "@/modules/auth/session";
@@ -14,6 +15,7 @@ type SP = { q?: string; comercial?: string; financeiro?: string; logistico?: str
 
 export default async function OrdersAdmin({ searchParams }: { searchParams: Promise<SP> }) {
   await requireAdminPage("ORDERS");
+  await expireReservationsIfDue();
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.pagina) || 1);
   const where: Prisma.OrderWhereInput = {};

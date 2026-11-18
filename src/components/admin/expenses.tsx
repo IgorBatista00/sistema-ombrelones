@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { appendFiles } from "@/lib/upload-client";
 import { useRef, useState, useTransition } from "react";
 import { createExpensesAction, deleteExpenseAction, payExpenseAction, removeExpenseDocumentAction, reverseExpenseAction, saveExpenseCategoriesAction, updateExpenseAction } from "@/modules/admin/finance-actions";
 import { RECEIPT_METHODS } from "@/modules/finance/receivables";
@@ -148,8 +149,8 @@ function AttachForm({ e, onClose }: { e: ExpenseRow; onClose: () => void }) {
   const send = async () => {
     if (!files.length) return setErr("Selecione o arquivo.");
     setBusy(true); setErr(null);
-    const fd = new FormData(); fd.set("expenseId", e.id); fd.set("type", type); files.forEach((f) => fd.append("files", f));
-    try { const r = await fetch("/api/admin/financeiro/saidas/documentos", { method: "POST", body: fd }); const j = await r.json(); if (!r.ok) setErr(j.error?.message ?? "Erro no envio."); else { setFiles([]); router.refresh(); } } catch { setErr("Falha de conexão."); }
+    const fd = new FormData(); fd.set("expenseId", e.id); fd.set("type", type);
+    try { await appendFiles(fd, files, "doc"); const r = await fetch("/api/admin/financeiro/saidas/documentos", { method: "POST", body: fd }); const j = await r.json(); if (!r.ok) setErr(j.error?.message ?? "Erro no envio."); else { setFiles([]); router.refresh(); } } catch (x) { setErr(x instanceof Error && x.message !== "Failed to fetch" ? x.message : "Falha de conexão."); }
     setBusy(false);
   };
   return (

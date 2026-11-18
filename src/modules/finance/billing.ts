@@ -1,4 +1,5 @@
 import "server-only";
+import { appendUploads, formUploads } from "@/modules/integrations/storage/uploads";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -11,7 +12,7 @@ import { defaultParcelMethod, effectiveMethod, invoiceAlert, normalizeInvoiceNum
 const brDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(d);
 const atNoonBR = (iso: string) => new Date(`${iso}T12:00:00-03:00`);
 const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Informe a data.");
-const filesOf = (form: FormData) => form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+const filesOf = (form: FormData) => formUploads(form);
 
 /** Só vendas ativas do funil de orçamentos (Mercado Livre e site faturam pelo próprio canal). */
 async function funnelSale(id: string) {
@@ -33,7 +34,7 @@ export async function setInvoice(actor: { id: string; name: string }, form: Form
   const dup = await db.sale.findFirst({ where: { invoiceNumber: number, status: "ATIVA", id: { not: sale.id } }, select: { code: true } });
   if (dup) throw new AppError("DUPLICATE", `A NF ${number} já está informada na venda ${dup.code}. Confira o número.`, 409);
   if (filesOf(form).length) {
-    const fd = new FormData(); fd.set("saleId", sale.id); fd.set("type", "NOTA_FISCAL"); fd.set("description", `NF ${number}`); filesOf(form).forEach((f) => fd.append("files", f));
+    const fd = new FormData(); fd.set("saleId", sale.id); fd.set("type", "NOTA_FISCAL"); fd.set("description", `NF ${number}`); appendUploads(fd, filesOf(form));
     await attachDocument(actor, fd);
   }
   await db.$transaction([
@@ -66,7 +67,7 @@ export async function setBoleto(actor: { id: string; name: string }, form: FormD
   const r = await parcelOf(p.data.receivableId);
   if (r.status !== "ABERTO") throw new AppError("INVALID", "Esta parcela não está em aberto.", 409);
   if (files.length) {
-    const fd = new FormData(); fd.set("saleId", r.saleId); fd.set("receivableId", r.id); fd.set("type", "BOLETO"); fd.set("description", `Boleto ${r.label}`); files.forEach((f) => fd.append("files", f));
+    const fd = new FormData(); fd.set("saleId", r.saleId); fd.set("receivableId", r.id); fd.set("type", "BOLETO"); fd.set("description", `Boleto ${r.label}`); appendUploads(fd, files);
     await attachDocument(actor, fd);
   }
   await db.$transaction([

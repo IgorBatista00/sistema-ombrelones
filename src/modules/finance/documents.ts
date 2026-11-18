@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { saveDocument, deleteDocumentFile } from "@/modules/integrations/storage/private";
+import { formUploads } from "@/modules/integrations/storage/uploads";
 import { DOC_TYPES, type DocTypeKey } from "./document-rules";
 
 export async function attachDocument(actor: { id: string; name: string }, form: FormData) {
@@ -13,7 +14,7 @@ export async function attachDocument(actor: { id: string; name: string }, form: 
     description: z.string().trim().max(160).optional().nullable().transform((v) => v || null),
   }).safeParse({ saleId: form.get("saleId"), receivableId: form.get("receivableId"), type: form.get("type"), description: form.get("description") });
   if (!meta.success) throw new AppError("VALIDATION", meta.error.issues[0]?.message ?? "Dados inválidos.", 422);
-  const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+  const files = formUploads(form);
   if (!files.length) throw new AppError("NO_FILES", "Selecione o arquivo.");
   if (files.length > 10) throw new AppError("TOO_MANY", "Envie até 10 arquivos por vez.");
   const sale = await db.sale.findUnique({ where: { id: meta.data.saleId }, include: { receivables: { select: { id: true } } } });

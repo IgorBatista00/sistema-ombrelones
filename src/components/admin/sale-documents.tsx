@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { appendFiles } from "@/lib/upload-client";
 import { useRef, useState, useTransition } from "react";
 import { addNoteAction, removeDocumentAction, removeNoteAction } from "@/modules/admin/finance-actions";
 import { ACCEPT, DOC_TYPES, type DocTypeKey } from "@/modules/finance/document-rules";
@@ -19,13 +20,13 @@ export function DocumentUploader({ saleId, receivables, presetType, presetReceiv
     if (!files.length) return setMsg({ ok: false, text: "Selecione o arquivo." });
     setBusy(true); setMsg(null);
     const fd = new FormData(); fd.set("saleId", saleId); fd.set("type", type); if (rec) fd.set("receivableId", rec); if (desc) fd.set("description", desc);
-    files.forEach((f) => fd.append("files", f));
     try {
+      await appendFiles(fd, files, "doc");
       const res = await fetch("/api/admin/financeiro/documentos", { method: "POST", body: fd });
       const j = await res.json();
       if (!res.ok) setMsg({ ok: false, text: j.error?.message ?? "Erro no envio." });
       else { setMsg({ ok: true, text: `${j.data.length} arquivo(s) anexado(s).` }); setFiles([]); setDesc(""); router.refresh(); }
-    } catch { setMsg({ ok: false, text: "Falha de conexão." }); }
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error && e.message !== "Failed to fetch" ? e.message : "Falha de conexão." }); }
     setBusy(false);
   }
   const showRec = type === "BOLETO" || type === "COMPROVANTE" || !!rec;
