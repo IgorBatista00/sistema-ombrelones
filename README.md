@@ -338,7 +338,7 @@ LOGISTICS, FINANCE, SETTINGS, ADMIN_USERS, STOCK.
 ## 7. Instalação e publicação
 
 ```bash
-cp .env.example .env            # preencha DATABASE_URL, APP_URL, SESSION_SECRET
+cp .env.example .env            # preencha DATABASE_URL, DATABASE_URL_UNPOOLED e APP_URL
 npm install                     # gera o Prisma Client
 npm run db:deploy               # aplica prisma/migrations
 SEED_ADMIN_EMAIL=voce@empresa.com.br SEED_ADMIN_PASSWORD='senha-forte' npm run db:seed
@@ -347,11 +347,12 @@ npm run dev                     # http://localhost:3000  ·  painel em /admin
 Demonstração com produtos de exemplo marcados `[DEMO]`: `SEED_DEMO=true npm run db:seed`
 (bloqueado quando `APP_ENV=production`).
 
-**Publicação** (Vercel, Railway, Render ou VPS com Node 20+):
-1. PostgreSQL gerenciado com **backup diário e point-in-time recovery** (Neon, Supabase, RDS…);
-2. variáveis de ambiente no provedor; `APP_ENV=production`;
-3. build: `npm run build` · start: `npm start` · antes de cada deploy: `npm run db:deploy`;
-4. **cron a cada 5 minutos**: `npm run jobs:expire-reservations` (ou Vercel Cron chamando o mesmo módulo);
+**Publicação:** Vercel (site) + banco PostgreSQL (Neon, pela integração da Vercel) + Vercel Blob (fotos e documentos).
+Passo a passo, custos e atualizações em **[DEPLOY.md](DEPLOY.md)**. Resumo técnico:
+1. `vercel.json`: região São Paulo (`gru1`), build `npm run vercel-build` (migrações + dados iniciais + `next build`), tarefa diária;
+2. variáveis por ambiente (Production / Preview) no painel da Vercel — nomes em `.env.example`;
+3. arquivos: o navegador envia direto ao Vercel Blob (limite de 4,5 MB por requisição da Vercel) e o servidor valida;
+4. reservas vencidas são liberadas sob demanda + tarefa diária `/api/cron/expire-reservations` (protegida por `CRON_SECRET`);
 5. no painel do Pagar.me, webhook para `https://SEU_DOMINIO/api/webhooks/payments/pagarme` com Basic Auth
    igual a `PAGARME_WEBHOOK_USER/PASSWORD`;
 6. HTTPS obrigatório (cabeçalhos de segurança e HSTS já configurados em `next.config.ts`).
