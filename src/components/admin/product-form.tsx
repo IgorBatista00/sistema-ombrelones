@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { saveProductFormAction, saveSupplierAction } from "@/modules/admin/product-actions";
 import { COST_CATEGORIES, LEAD_TIMES, computeCost, cubicMeters, marginBps, parseDecimal, parseMoney, parsePercentBps, type CostCategory } from "@/modules/products/cost";
 import { formatCnpj } from "@/modules/companies/cnpj";
+import { MAX_PRODUCT_IMAGES } from "@/modules/products/limits";
 import { formatBRL } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
@@ -50,6 +51,7 @@ export function ProductForm(props: {
   const [error, setError] = useState<string | null>(null);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [imgNotice, setImgNotice] = useState<string | null>(null);
   const [supplierDialog, setSupplierDialog] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -97,14 +99,19 @@ export function ProductForm(props: {
   // ---- Fotos
   async function upload(files: FileList | null) {
     if (!files?.length) return;
+    const room = MAX_PRODUCT_IMAGES - v.images.length;
+    if (room <= 0) { setImgNotice(`Este produto já tem ${MAX_PRODUCT_IMAGES} fotos, o máximo permitido. Remova uma para adicionar outra.`); return; }
+    const chosen = [...files].slice(0, room);
+    const skipped = files.length - chosen.length;
+    setImgNotice(skipped > 0 ? `Limite de ${MAX_PRODUCT_IMAGES} fotos por produto: ${chosen.length === 1 ? "foi adicionada 1 foto" : `foram adicionadas ${chosen.length} fotos`} e ${skipped === 1 ? "1 ficou de fora" : `${skipped} ficaram de fora`}.` : null);
     setUploading(true); setError(null);
     const fd = new FormData();
-    [...files].forEach((f) => fd.append("files", f));
+    chosen.forEach((f) => fd.append("files", f));
     try {
       const res = await fetch("/api/admin/uploads", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok) setError(`Erro no upload: ${json.error?.message ?? "tente novamente"}`);
-      else set("images", [...v.images, ...json.data.map((f: { url: string; key: string }) => ({ url: f.url, storageKey: f.key, alt: "" }))]);
+      else set("images", [...v.images, ...json.data.map((f: { url: string; key: string }) => ({ url: f.url, storageKey: f.key, alt: "" }))].slice(0, MAX_PRODUCT_IMAGES));
     } catch { setError("Erro no upload: falha de conexão."); }
     setUploading(false);
   }
@@ -166,7 +173,7 @@ export function ProductForm(props: {
       <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
         <div className="space-y-5">
           {/* 01 · Imagens */}
-          <Section n={1} title="Imagens" hint="A primeira foto é a principal (vitrine e carrinho).">
+          <Section n={1} title={`Imagens · ${v.images.length} de ${MAX_PRODUCT_IMAGES}`} hint="Até 8 fotos por produto. A primeira é a principal (vitrine e carrinho).">
             <div className="flex flex-wrap gap-3">
               {v.images.map((img, i) => (
                 <div key={img.url} className="group relative h-32 w-32 overflow-hidden rounded border border-line bg-[#ece8e1]">
@@ -176,21 +183,23 @@ export function ProductForm(props: {
                     <button type="button" className="px-1.5" aria-label="Mover para a esquerda" onClick={() => moveImg(i, -1)} disabled={i === 0}>←</button>
                     <button type="button" className="px-1.5" aria-label="Definir como principal" onClick={() => makeMain(i)} disabled={i === 0}>★</button>
                     <button type="button" className="px-1.5" aria-label="Mover para a direita" onClick={() => moveImg(i, 1)} disabled={i === v.images.length - 1}>→</button>
-                    <button type="button" className="px-1.5" aria-label="Remover foto" onClick={() => set("images", v.images.filter((_, j) => j !== i))}>✕</button>
+                    <button type="button" className="px-1.5" aria-label="Remover foto" onClick={() => { set("images", v.images.filter((_, j) => j !== i)); setImgNotice(null); }}>✕</button>
                   </div>
                 </div>
               ))}
-              <label className={`flex h-32 w-32 cursor-pointer flex-col items-center justify-center rounded border border-dashed border-line text-center text-xs text-muted hover:border-ink hover:text-ink ${uploading ? "pointer-events-none opacity-50" : ""}`}>
+              {v.images.length < MAX_PRODUCT_IMAGES && <label className={`flex h-32 w-32 cursor-pointer flex-col items-center justify-center rounded border border-dashed border-line text-center text-xs text-muted hover:border-ink hover:text-ink ${uploading ? "pointer-events-none opacity-50" : ""}`}>
                 <span className="text-2xl leading-none">+</span>{uploading ? "Enviando…" : "Adicionar fotos"}
                 <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple className="sr-only" onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
-              </label>
+              </label>}
             </div>
             {v.images.length > 0 && (
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 {v.images.map((img, i) => <Input key={img.url} className="h-9 text-xs" placeholder={`Descrição da foto ${i + 1} (acessibilidade)`} value={img.alt} onChange={(e) => set("images", v.images.map((x, j) => (j === i ? { ...x, alt: e.target.value } : x)))} />)}
               </div>
             )}
-            <p className="mt-3 text-xs text-muted">JPG, PNG, WebP ou AVIF até 8 MB cada. Fotos removidas são apagadas do armazenamento ao salvar.</p>
+            {v.images.length > MAX_PRODUCT_IMAGES && <div className="mt-3"><Notice tone="danger">Este produto tem {v.images.length} fotos. O máximo agora é {MAX_PRODUCT_IMAGES}: remova {v.images.length - MAX_PRODUCT_IMAGES} para conseguir salvar.</Notice></div>}
+            {imgNotice && <div className="mt-3"><Notice tone="warning">{imgNotice}</Notice></div>}
+            <p className="mt-3 text-xs text-muted">{v.images.length >= MAX_PRODUCT_IMAGES ? "Limite de fotos atingido. " : ""}JPG, PNG, WebP ou AVIF até 8 MB cada. Fotos removidas são apagadas do armazenamento ao salvar.</p>
           </Section>
 
           {/* 02 · Dados do produto */}

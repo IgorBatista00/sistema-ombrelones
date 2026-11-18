@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { normalizeCnpj } from "@/modules/companies/cnpj";
 import { deleteImage } from "@/modules/integrations/storage";
+import { MAX_PRODUCT_IMAGES } from "./limits";
 import { computeCost, normalizePrincipal, parseDecimal, parseMoney, parsePercentBps, toMm, LEAD_TIMES } from "./cost";
 
 type Tx = Prisma.TransactionClient;
@@ -59,7 +60,7 @@ export const productFormSchema = z.object({
     url: z.string().min(1).max(500).refine((u) => u.startsWith("/api/media/") || u.startsWith("https://"), "URL de imagem inválida"),
     storageKey: z.string().max(200).optional().nullable(),
     alt: z.string().trim().max(160).default(""),
-  })).max(30).default([]),
+  })).max(MAX_PRODUCT_IMAGES, `Cada produto pode ter no máximo ${MAX_PRODUCT_IMAGES} fotos. Remova as excedentes para salvar.`).default([]),
 }).superRefine((v, ctx) => {
   const ids = v.suppliers.map((s) => s.supplierId);
   if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["suppliers"], message: "O mesmo fornecedor foi adicionado duas vezes." });
