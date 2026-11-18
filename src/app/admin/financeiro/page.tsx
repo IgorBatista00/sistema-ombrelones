@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { PageHead, Table, Td } from "@/components/admin/ui";
@@ -50,7 +50,7 @@ function periods() {
 }
 
 export default async function Finance({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requireAdmin("FINANCE");
+  await requireAdminPage("FINANCE");
   const { skipped } = await backfillSales();
   const raw = await searchParams;
   const f = financeFilterSchema.parse(raw);

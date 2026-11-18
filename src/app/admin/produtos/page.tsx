@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { categoriesForAdmin } from "@/modules/products/categories";
@@ -17,7 +17,7 @@ const ALERTS = [["sem-foto", "Sem foto"], ["sem-fornecedor", "Sem fornecedor"], 
 const m3 = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 
 export default async function ProductsAdmin({ searchParams }: { searchParams: Promise<AdminProductFilters> }) {
-  await requireAdmin("PRODUCTS");
+  await requireAdminPage("PRODUCTS");
   const sp = await searchParams;
   const [rows, categories, colors, catsFull] = await Promise.all([
     listAdminProducts(sp),

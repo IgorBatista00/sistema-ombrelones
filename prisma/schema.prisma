@@ -74,6 +74,7 @@ model User {
   failedLogins    Int       @default(0)
   lockedUntil     DateTime?
   lastLoginAt     DateTime?
+  mustChangePassword Boolean @default(false) // senha provisória criada pelo Adm: trocar no primeiro acesso
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -146,10 +147,21 @@ enum AdminPermission {
   STOCK
 }
 
+/// Nível de acesso do painel. As permissões por área (AdminPermission) são derivadas do nível
+/// pela tabela "Níveis de acesso" (Setting "access-levels"); Adm tem acesso a tudo.
+enum AdminLevel {
+  ADM
+  COMERCIAL
+  EXPEDICAO
+  FINANCEIRO
+}
+
 model AdminUser {
   id          String            @id @default(cuid())
   userId      String            @unique
+  level       AdminLevel? // vazio = usuário antigo, ainda sem nível escolhido
   permissions AdminPermission[]
+  createdById String?
   createdAt   DateTime          @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

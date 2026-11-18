@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { requireAdmin } from "@/modules/auth/session";
+import { redirect } from "next/navigation";
+import { getViewer, requireAdminPage } from "@/modules/auth/session";
+import { homeFor } from "@/modules/admin/menu";
 import { getDashboardMetrics } from "@/modules/admin/metrics";
 import { financeDashboard } from "@/modules/finance/queries";
 import { formatBRL } from "@/lib/money";
@@ -8,7 +10,9 @@ import { PageHead, Stat, Table, Td } from "@/components/admin/ui";
 const RANGES = { "7": "7 dias", "30": "30 dias", "90": "90 dias" } as const;
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ dias?: string }> }) {
-  const { admin } = await requireAdmin("DASHBOARD");
+  const v = await getViewer();
+  if (v.admin && !v.admin.permissions.includes("DASHBOARD")) redirect(homeFor(v.admin.permissions)); // quem não tem Dashboard cai na primeira área liberada
+  const { admin } = await requireAdminPage("DASHBOARD");
   const canFinance = admin.permissions.includes("FINANCE"); // valores financeiros só para quem tem acesso ao Financeiro
   const dias = (await searchParams).dias ?? "30";
   const days = dias in RANGES ? Number(dias) : 30;

@@ -1,7 +1,7 @@
 import { parseDocNumber } from "@/lib/doc-code";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { STATUS_LABEL, validUntil } from "@/modules/quotes/totals";
@@ -15,7 +15,7 @@ import { orderCategoryOptions } from "@/modules/quotes/categories";
 const TONE = { RASCUNHO: "neutral", EMITIDO: "warning", ENVIADO: "warning", APROVADO: "success", RECUSADO: "danger", EXPIRADO: "danger" } as const;
 
 export default async function Quotes({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; categoria?: string }> }) {
-  await requireAdmin("ORDERS");
+  await requireAdminPage("ORDERS");
   const sp = await searchParams;
   const where: Prisma.QuoteWhereInput = {};
   if (sp.status && sp.status in STATUS_LABEL) where.status = sp.status as keyof typeof STATUS_LABEL;

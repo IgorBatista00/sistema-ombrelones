@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { funnelCards, funnelFilterSchema } from "@/modules/quotes/service";
 import { PageHead } from "@/components/admin/ui";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { orderCategoryOptions } from "@/modules/quotes/categories";
 export const metadata = { title: "Funil de orçamentos" };
 
 export default async function Funnel({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requireAdmin("ORDERS");
+  await requireAdminPage("ORDERS");
   const f = funnelFilterSchema.parse(await searchParams);
   const [cards, cats] = await Promise.all([funnelCards(f), orderCategoryOptions()]);
   const filtered = !!(f.q || f.criadoDe || f.criadoAte || f.fechadoDe || f.fechadoAte || f.categoria);

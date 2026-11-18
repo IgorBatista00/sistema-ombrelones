@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { getUnitPrices } from "@/modules/pricing";
@@ -13,7 +13,7 @@ import { Input, Select } from "@/components/ui/field";
 import { Notice } from "@/components/ui/misc";
 
 export default async function ProductEdit({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ salvo?: string }> }) {
-  await requireAdmin("PRODUCTS");
+  await requireAdminPage("PRODUCTS");
   const { id } = await params;
   const { salvo } = await searchParams;
   const [initial, opts, p] = await Promise.all([

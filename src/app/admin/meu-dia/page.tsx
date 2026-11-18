@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdminAny } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { purchaseOrdersForDay } from "@/modules/purchase-orders/service";
 import { myDay } from "@/modules/admin/my-day";
 import { itemsSummary, resolveDay } from "@/modules/admin/my-day-rules";
@@ -56,7 +56,7 @@ function ItemsTable({ items, money }: { items: { code: string | null; name: stri
 }
 
 export default async function MyDay({ searchParams }: { searchParams: Promise<{ data?: string }> }) {
-  const { admin } = await requireAdminAny(["DASHBOARD", "ORDERS", "LOGISTICS", "FINANCE", "STOCK"]);
+  const { admin } = await requireAdminPage(["DASHBOARD", "ORDERS", "LOGISTICS", "FINANCE", "STOCK"]);
   const d = resolveDay((await searchParams).data);
   const canStock = admin.permissions.includes("STOCK");
   const [m, po] = await Promise.all([myDay(d.day, admin.permissions), canStock ? purchaseOrdersForDay(d.day) : null]);
@@ -91,7 +91,7 @@ export default async function MyDay({ searchParams }: { searchParams: Promise<{ 
 
       <div className="grid gap-5 xl:grid-cols-2">
         {m.can.sales && (
-          <Section id="vendas" title={`Vendas ${day}`} count={`${m.sales.count} · ${formatBRL(m.sales.total)}`} action={<Link className="link text-xs" href={`/admin/financeiro?aba=vendas&de=${d.day}&ate=${d.day}`}>Ver no Financeiro</Link>}>
+          <Section id="vendas" title={`Vendas ${day}`} count={`${m.sales.count} · ${formatBRL(m.sales.total)}`} action={m.can.finance ? <Link className="link text-xs" href={`/admin/financeiro?aba=vendas&de=${d.day}&ate=${d.day}`}>Ver no Financeiro</Link> : undefined}>
             {(m.sales.ml.length > 0 || m.sales.site.length > 0) && m.sales.rows.length + m.sales.site.length + m.sales.ml.length > 1 && (
               <p className="mb-2 text-xs text-muted" data-channels>Funil {formatBRL(m.sales.byChannel.funil)}{m.sales.site.length > 0 && ` · Site ${formatBRL(m.sales.byChannel.site)}`}{m.sales.ml.length > 0 && ` · Mercado Livre ${formatBRL(m.sales.byChannel.ml)}`}</p>
             )}
@@ -101,7 +101,7 @@ export default async function MyDay({ searchParams }: { searchParams: Promise<{ 
                 {m.sales.rows.map((s) => (
                   <li key={s.id} className="py-2.5 text-sm" data-sale={s.code}>
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span><Link className="font-medium hover:underline" href={`/admin/financeiro/venda/${s.id}`}>{s.code}</Link> · {s.clientName}</span>
+                      <span>{m.can.finance ? <Link className="font-medium hover:underline" href={`/admin/financeiro/venda/${s.id}`}>{s.code}</Link> : <span className="font-medium">{s.code}</span>} · {s.clientName}</span>
                       <span className="font-medium">{formatBRL(s.totalCents)}</span>
                     </div>
                     <p className="text-xs text-muted">{[hour(s.closedAt), s.category, s.paymentTerms, s.seller && `Vendedor: ${s.seller}`].filter(Boolean).join(" · ")}</p>
@@ -111,7 +111,7 @@ export default async function MyDay({ searchParams }: { searchParams: Promise<{ 
                 {m.sales.ml.map((o) => (
                   <li key={o.orderId} className="py-2.5 text-sm" data-ml-sale={o.orderId}>
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span><Link className="font-medium hover:underline" href={`/admin/financeiro?aba=mercadolivre&q=${o.orderId}`}>Pedido {o.orderId}</Link>{o.buyer && <> · {o.buyer}</>} <Badge tone="warning">Mercado Livre</Badge></span>
+                      <span>{m.can.finance ? <Link className="font-medium hover:underline" href={`/admin/financeiro?aba=mercadolivre&q=${o.orderId}`}>Pedido {o.orderId}</Link> : <span className="font-medium">Pedido {o.orderId}</span>}{o.buyer && <> · {o.buyer}</>} <Badge tone="warning">Mercado Livre</Badge></span>
                       <span className="font-medium">{formatBRL(o.totalCents)}</span>
                     </div>
                     <p className="text-xs text-muted">{[hour(o.saleDate), o.feeCents ? `tarifa ${formatBRL(o.feeCents)}` : null, o.netCents != null ? `líquido ${formatBRL(o.netCents)}` : null].filter(Boolean).join(" · ")}</p>
@@ -119,7 +119,7 @@ export default async function MyDay({ searchParams }: { searchParams: Promise<{ 
                   </li>
                 ))}
                 {m.sales.site.map((o) => (
-                  <li key={o.id} className="py-2.5 text-sm"><div className="flex justify-between gap-2"><span><Link className="font-medium hover:underline" href={`/admin/pedidos/${o.id}`}>{o.code}</Link> · {o.client} <Badge tone="neutral">site</Badge></span><span className="font-medium">{formatBRL(o.totalCents)}</span></div>
+                  <li key={o.id} className="py-2.5 text-sm"><div className="flex justify-between gap-2"><span>{m.can.orders ? <Link className="font-medium hover:underline" href={`/admin/pedidos/${o.id}`}>{o.code}</Link> : <span className="font-medium">{o.code}</span>} · {o.client} <Badge tone="neutral">site</Badge></span><span className="font-medium">{formatBRL(o.totalCents)}</span></div>
                     <p className="mt-0.5 text-xs">{itemsSummary(o.items, 4)}</p></li>
                 ))}
               </ul>

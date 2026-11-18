@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { formatCnpj, normalizeCnpj } from "@/modules/companies/cnpj";
@@ -18,7 +18,7 @@ const STATUS = { PENDING_EMAIL: ["E-mail pendente", "neutral"], ACTIVE: ["Ativa"
 type SP = { q?: string; status?: string; aba?: string; pagina?: string };
 
 export default async function Customers({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireAdmin("CUSTOMERS");
+  await requireAdminPage("CUSTOMERS");
   const sp = await searchParams;
   const aba = sp.aba === "loja" ? "loja" : "cadastro";
   const tabs = (

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { clientOptions, quoteProductOptions } from "@/modules/quotes/service";
 import { companyHeader, newSheet } from "@/modules/quotes/sheet-data";
 import { getOrderCategories } from "@/modules/quotes/categories";
@@ -9,7 +9,7 @@ import { PageHead } from "@/components/admin/ui";
 
 /** Novo orçamento: primeiro escolhe a categoria interna do pedido; depois abre a folha já com ela. */
 export default async function NewQuote({ searchParams }: { searchParams: Promise<{ categoria?: string }> }) {
-  const { user } = await requireAdmin("ORDERS");
+  const { user } = await requireAdminPage("ORDERS");
   const sp = await searchParams;
   const categories = await getOrderCategories();
   const chosen = sp.categoria === "sem" ? "" : categories.find((c) => c === sp.categoria);

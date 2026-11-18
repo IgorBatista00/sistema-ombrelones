@@ -70,6 +70,7 @@ async function main() {
       update: {},
       create: {
         userId: user.id,
+        level: "ADM",
         permissions: ["DASHBOARD", "PRODUCTS", "STOCK", "CUSTOMERS", "ORDERS", "LOGISTICS", "FINANCE", "SETTINGS", "ADMIN_USERS"],
       },
     });

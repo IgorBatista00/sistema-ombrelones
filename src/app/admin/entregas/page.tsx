@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { formatBRL } from "@/lib/money";
 import { formatCnpj } from "@/modules/companies/cnpj";
 import { PageHead } from "@/components/admin/ui";
@@ -17,7 +17,7 @@ const d = (x: Date | null) => (x ? x.toLocaleDateString("pt-BR", { timeZone: "Am
 type Item = { name: string; quantity: number; measures?: string | null; finish?: string | null; imageUrl?: string | null };
 
 export default async function Deliveries({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requireAdmin("LOGISTICS");
+  await requireAdminPage("LOGISTICS");
   await backfillDeliveries();
   const f = deliveryFilterSchema.parse(await searchParams);
   const [{ rows, summary: s }, cats] = await Promise.all([deliveriesView(f), orderCategoryOptions()]);

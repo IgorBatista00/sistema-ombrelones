@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { PageHead } from "@/components/admin/ui";
 import { PoForm } from "@/components/admin/po-form";
 import { getPurchaseOrder, poFormData } from "@/modules/purchase-orders/service";
@@ -10,7 +10,7 @@ const money = (c: number | null) => (c == null ? "" : (c / 100).toLocaleString("
 const qty = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 3, useGrouping: false });
 
 export default async function EditPurchaseOrder({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin("STOCK");
+  await requireAdminPage("STOCK");
   const { id } = await params;
   const [po, { suppliers, variants }] = await Promise.all([getPurchaseOrder(id), poFormData()]);
   if (!po) notFound();

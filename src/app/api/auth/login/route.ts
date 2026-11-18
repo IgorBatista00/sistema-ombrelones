@@ -24,7 +24,7 @@ export const POST = route(async (req) => {
     await db.user.update({ where: { id: user.id }, data: { failedLogins: failed, lockedUntil: failed >= 10 ? new Date(Date.now() + 30 * 60_000) : null } });
     throw new AppError("INVALID_CREDENTIALS", GENERIC, 401);
   }
-  if (!user.isActive) throw new AppError("INACTIVE", "Usuário desativado. Fale com o comercial.", 403);
+  if (!user.isActive) throw new AppError("INACTIVE", "Usuário desativado. Fale com o comercial ou com o administrador do sistema.", 403);
   const blocked = user.memberships.length > 0 && user.memberships.every((m) => m.company.status === "BLOCKED");
   if (blocked) throw new AppError("COMPANY_BLOCKED", "O acesso desta empresa está bloqueado. Fale com o comercial.", 403);
 

@@ -1,7 +1,7 @@
 import { parseDocNumber } from "@/lib/doc-code";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { LABELS } from "@/modules/orders/state";
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 type SP = { q?: string; comercial?: string; financeiro?: string; logistico?: string; fiscal?: string; pagina?: string };
 
 export default async function OrdersAdmin({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireAdmin("ORDERS");
+  await requireAdminPage("ORDERS");
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.pagina) || 1);
   const where: Prisma.OrderWhereInput = {};

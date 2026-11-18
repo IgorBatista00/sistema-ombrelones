@@ -1,10 +1,10 @@
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { PageHead } from "@/components/admin/ui";
 import { PurchaseForm } from "@/components/admin/purchase-form";
 
 export default async function NewPurchase() {
-  await requireAdmin("STOCK");
+  await requireAdminPage("STOCK");
   const [suppliers, variants] = await Promise.all([
     db.supplier.findMany({ where: { isActive: true }, orderBy: { legalName: "asc" }, select: { id: true, legalName: true, tradeName: true } }),
     db.productVariant.findMany({

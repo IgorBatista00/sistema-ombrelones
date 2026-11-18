@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { formatBRL } from "@/lib/money";
 import { PageHead } from "@/components/admin/ui";
 import { Badge } from "@/components/ui/misc";
@@ -23,7 +23,7 @@ function Prazo({ r }: { r: PoRow }) {
 }
 
 export default async function PurchaseOrders({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requireAdmin("STOCK");
+  await requireAdminPage("STOCK");
   const f = poFilterSchema.parse(await searchParams);
   const { rows, summary: s, suppliers, performance, situacao: sit } = await purchaseOrdersView(f);
   const aba = f.aba ?? "ordens";

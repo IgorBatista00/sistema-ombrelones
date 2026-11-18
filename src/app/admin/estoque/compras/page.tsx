@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { PageHead } from "@/components/admin/ui";
 
 export default async function Purchases() {
-  await requireAdmin("STOCK");
+  await requireAdminPage("STOCK");
   const purchases = await db.purchase.findMany({ orderBy: [{ issuedAt: "desc" }, { createdAt: "desc" }], take: 100, include: { items: true } });
   const sup = await db.supplier.findMany({ where: { id: { in: [...new Set(purchases.map((p) => p.supplierId))] } }, select: { id: true, legalName: true, tradeName: true } });
   return (

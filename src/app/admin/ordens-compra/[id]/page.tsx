@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { formatBRL } from "@/lib/money";
 import { Badge } from "@/components/ui/misc";
 import { getPurchaseOrder } from "@/modules/purchase-orders/service";
@@ -13,7 +13,7 @@ const dt = (x: Date) => x.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo
 const days = (n: number) => `${n} ${n === 1 ? "dia" : "dias"}`;
 
 export default async function PurchaseOrderPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin("STOCK");
+  await requireAdminPage("STOCK");
   const { id } = await params;
   const po = await getPurchaseOrder(id);
   if (!po) notFound();

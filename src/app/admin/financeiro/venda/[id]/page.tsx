@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { formatBRL } from "@/lib/money";
 import { formatCnpj } from "@/modules/companies/cnpj";
 import { Badge } from "@/components/ui/misc";
@@ -21,7 +21,7 @@ const METHOD_GUESS = (t: string) => (/pix/i.test(t) ? "Pix" : /boleto/i.test(t) 
 const href = (id: string) => `/api/admin/financeiro/documentos/${id}`;
 
 export default async function SalePage({ params }: { params: Promise<{ id: string }> }) {
-  const { user } = await requireAdmin("FINANCE");
+  const { user } = await requireAdminPage("FINANCE");
   const s = await saleDetail((await params).id);
   if (!s) notFound();
   const sum = saleSummary(s, s.receivables);

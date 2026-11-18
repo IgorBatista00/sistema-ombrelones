@@ -1,5 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { cache } from "react";
 import { db } from "@/lib/db";
 import { randomToken, sha256 } from "@/lib/crypto";
@@ -17,6 +18,12 @@ export async function createSession(userId: string, activeCompanyId: string | nu
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", expires: expiresAt,
   });
+}
+
+/** Id (hash) da sessão atual — usado para encerrar as OUTRAS sessões ao trocar a senha. */
+export async function currentSessionId() {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  return token ? sha256(token) : null;
 }
 
 export async function destroySession() {
@@ -50,7 +57,7 @@ export const getViewer = cache(async () => {
   const canSeePrices = !!user.emailVerifiedAt && company?.status === "ACTIVE";
 
   return {
-    user: { id: user.id, name: user.name, email: user.email, emailVerified: !!user.emailVerifiedAt },
+    user: { id: user.id, name: user.name, email: user.email, emailVerified: !!user.emailVerifiedAt, mustChangePassword: user.mustChangePassword },
     company,
     role: membership?.role ?? null,
     admin: user.adminRole,
@@ -81,5 +88,20 @@ export async function requireAdminAny(permissions: AdminPermission[]) {
   const v = await getViewer();
   if (!v.user || !v.admin) throw new AppError("FORBIDDEN", "Acesso restrito.", 403);
   if (!permissions.some((p) => v.admin!.permissions.includes(p))) throw new AppError("FORBIDDEN", "Permissão insuficiente.", 403);
+  return { ...v, user: v.user, admin: v.admin };
+}
+
+/**
+ * Versão para PÁGINAS do painel: em vez de erro, leva para o login (sem sessão),
+ * para a troca de senha obrigatória ou para "Sem acesso" (área fora do nível da pessoa).
+ * Em ações e rotas de API continue usando requireAdmin / requireAdminAny (devolvem erro).
+ */
+export async function requireAdminPage(permission: AdminPermission | AdminPermission[]) {
+  const v = await getViewer();
+  if (!v.user) redirect("/entrar?next=/admin");
+  if (!v.admin) redirect("/");
+  if (v.user.mustChangePassword) redirect("/trocar-senha");
+  const need = Array.isArray(permission) ? permission : [permission];
+  if (!need.some((p) => v.admin!.permissions.includes(p))) redirect("/admin/sem-acesso");
   return { ...v, user: v.user, admin: v.admin };
 }

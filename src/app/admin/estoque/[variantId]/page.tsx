@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { getStockDisplay } from "@/modules/inventory/movements";
 import { recentMovements } from "@/modules/inventory/admin-queries";
@@ -13,7 +13,7 @@ import { MoveButton } from "@/components/admin/stock-client";
 import { MovesTable } from "@/components/admin/moves-table";
 
 export default async function StockHistory({ params }: { params: Promise<{ variantId: string }> }) {
-  await requireAdmin("STOCK");
+  await requireAdminPage("STOCK");
   const { variantId } = await params;
   const v = await db.productVariant.findUnique({ where: { id: variantId }, include: { stock: true, product: { select: { id: true, name: true, costFinalCents: true } } } });
   if (!v) notFound();

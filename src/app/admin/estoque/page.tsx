@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { getStockDisplay } from "@/modules/inventory/movements";
@@ -15,7 +15,7 @@ import { MovesTable } from "@/components/admin/moves-table";
 const STATE = { zero: ["Zerado", "danger"], low: ["Abaixo do mínimo", "warning"], ok: ["Normal", "success"], mto: ["Sob encomenda", "neutral"] } as const;
 
 export default async function StockPage({ searchParams }: { searchParams: Promise<StockFilters> }) {
-  await requireAdmin("STOCK");
+  await requireAdminPage("STOCK");
   const sp = await searchParams;
   const display = await getStockDisplay();
   const [rows, all, categories, moves] = await Promise.all([listStock(sp, display), listStock({}, display), db.category.findMany({ orderBy: { position: "asc" }, select: { id: true, name: true } }), recentMovements(undefined, 12)]);

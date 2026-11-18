@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { formatCnpj } from "@/modules/companies/cnpj";
@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/field";
 import { Notice } from "@/components/ui/misc";
 
 export default async function OrderAdmin({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin("ORDERS");
+  await requireAdminPage("ORDERS");
   const order = await db.order.findUnique({
     where: { id: (await params).id },
     include: { items: true, company: true, shippingQuote: true, payments: { orderBy: { createdAt: "desc" } }, shipments: true, history: { orderBy: { createdAt: "desc" } }, fiscalDocs: true },

@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { PageHead } from "@/components/admin/ui";
 import { PoForm } from "@/components/admin/po-form";
 import { poFormData } from "@/modules/purchase-orders/service";
@@ -6,7 +6,7 @@ import { poFormData } from "@/modules/purchase-orders/service";
 export const metadata = { title: "Nova ordem de compra" };
 
 export default async function NewPurchaseOrder() {
-  await requireAdmin("STOCK");
+  await requireAdminPage("STOCK");
   const { suppliers, variants } = await poFormData();
   return (
     <>

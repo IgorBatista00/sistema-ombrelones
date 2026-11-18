@@ -41,9 +41,10 @@ As demais variáveis do `.env.example` (pagamentos, frete, e-mail, ERP) ficam va
 1. Faça um deploy (a Railway publica sozinha ao receber o código).
 2. Nos logs do **pre-deploy**, confirme que as migrações rodaram sem erro.
 3. Abra `https://seudominio/api/health` → deve mostrar `{"ok":true}`.
-4. Entre em `/entrar` com o administrador, troque a senha e apague `SEED_ADMIN_PASSWORD`.
-5. Configurações: nome da marca, razão social, CNPJ, endereço e contatos. Depois importe produtos e clientes pelas planilhas.
-6. Siga `LANCAMENTO-SEO.md` (Search Console, sitemap).
+4. Entre em `/entrar` com o administrador (nível Adm), troque a senha em **Minha senha** e apague `SEED_ADMIN_PASSWORD`.
+5. Crie os demais usuários em **Usuários** (níveis Adm, Comercial, Expedição, Financeiro). Cada pessoa recebe uma senha provisória e cria a própria no primeiro acesso.
+6. Configurações: nome da marca, razão social, CNPJ, endereço e contatos. Depois importe produtos e clientes pelas planilhas.
+7. Siga `LANCAMENTO-SEO.md` (Search Console, sitemap).
 
 ## 4. Rotina agendada (reservas de estoque da loja)
 

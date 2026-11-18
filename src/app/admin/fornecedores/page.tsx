@@ -1,11 +1,11 @@
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { normalizeCnpj } from "@/modules/companies/cnpj";
 import { PageHead } from "@/components/admin/ui";
 import { SuppliersTable } from "@/components/admin/suppliers-table";
 
 export default async function Suppliers({ searchParams }: { searchParams: Promise<{ q?: string; inativos?: string }> }) {
-  await requireAdmin("PRODUCTS");
+  await requireAdminPage("PRODUCTS");
   const sp = await searchParams;
   const q = sp.q?.trim();
   const digits = q ? normalizeCnpj(q) : "";

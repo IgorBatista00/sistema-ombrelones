@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { PageHead } from "@/components/admin/ui";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
@@ -10,7 +10,7 @@ import { PriceTable } from "@/components/admin/price-table";
 export const metadata = { title: "Tabela" };
 
 export default async function PriceTablePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requireAdmin("PRODUCTS");
+  await requireAdminPage("PRODUCTS");
   const f = tableFilterSchema.parse(await searchParams);
   const { rows, categories, counts } = await priceTable(f);
   const chip = (k: keyof typeof STATE_LABEL | "", label: string, n?: number) => {

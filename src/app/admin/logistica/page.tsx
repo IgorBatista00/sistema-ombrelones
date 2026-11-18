@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { proposeQuoteAction } from "@/modules/admin/actions";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/field";
 import { Badge } from "@/components/ui/misc";
 
 export default async function Logistics() {
-  await requireAdmin("LOGISTICS");
+  await requireAdminPage("LOGISTICS");
   const quotes = await db.shippingQuote.findMany({
     where: { status: { in: ["REQUESTED", "PROPOSED"] }, order: { commercialStatus: "AWAITING_QUOTE" } },
     include: { order: { include: { company: true, items: { select: { packagesSnapshot: true, quantity: true } } } } },

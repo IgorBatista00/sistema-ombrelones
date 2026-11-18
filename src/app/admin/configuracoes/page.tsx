@@ -1,4 +1,5 @@
-import { requireAdmin } from "@/modules/auth/session";
+import Link from "next/link";
+import { requireAdminPage } from "@/modules/auth/session";
 import { db } from "@/lib/db";
 import { saveSettingAction } from "@/modules/admin/actions";
 import { POLICIES } from "@/components/layout/footer";
@@ -10,7 +11,7 @@ import { isAutomaticShippingConfigured } from "@/modules/integrations/shipping";
 import { isPaymentConfigured } from "@/modules/integrations/payments";
 
 export default async function Settings() {
-  const { admin } = await requireAdmin("SETTINGS");
+  const { admin } = await requireAdminPage("SETTINGS");
   const rows = await db.setting.findMany();
   const get = (k: string) => (rows.find((r) => r.key === k)?.value ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   const brand = get("brand"), company = get("company"), contact = get("contact"), commercial = get("commercial");
@@ -88,21 +89,11 @@ export default async function Settings() {
 
         {admin.permissions.includes("ADMIN_USERS") && (
           <section className="card p-6 text-sm">
-            <h2 className="label mb-3">Usuários administrativos e permissões</h2>
-            <AdminUsers />
+            <h2 className="label mb-2">Usuários e níveis de acesso</h2>
+            <p className="text-muted">Criação de usuários, níveis (Adm, Comercial, Expedição, Financeiro) e senhas ficam em <Link href="/admin/usuarios" className="link">Usuários</Link>.</p>
           </section>
         )}
       </div>
-    </>
-  );
-}
-
-async function AdminUsers() {
-  const admins = await db.adminUser.findMany({ include: { user: { select: { name: true, email: true } } } });
-  return (
-    <>
-      <ul className="space-y-2">{admins.map((a) => <li key={a.id}>{a.user.name} <span className="text-muted">· {a.user.email} · {a.permissions.join(", ")}</span></li>)}</ul>
-      <p className="mt-3 text-xs text-muted">Inclusão/edição de administradores: ver README (comando de seed). Tela de gestão completa prevista na Etapa 6.</p>
     </>
   );
 }

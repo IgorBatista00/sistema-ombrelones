@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/modules/auth/session";
+import { requireAdminPage } from "@/modules/auth/session";
 import { getProductFormOptions } from "@/modules/products/form-data";
 import { loadProductForm } from "@/modules/products/service";
 import { ProductForm } from "@/components/admin/product-form";
 
 export default async function DuplicateProduct({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin("PRODUCTS");
+  await requireAdminPage("PRODUCTS");
   const { id } = await params;
   const [initial, opts] = await Promise.all([loadProductForm(id, true), getProductFormOptions()]);
   if (!initial) notFound();
