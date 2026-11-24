@@ -43,9 +43,9 @@ describe("níveis de acesso", () => {
 
   it("monta o menu e a página inicial de cada nível", () => {
     const com = allowedMenu(permissionsFor("COMERCIAL", DEFAULT_MATRIX)).map((m) => m.label);
-    expect(com).toEqual(["Meu dia", "Pedidos", "Orçamentos", "Funil de orçamentos", "Clientes"]);
-    expect(allowedMenu(permissionsFor("EXPEDICAO", DEFAULT_MATRIX)).map((m) => m.label)).toEqual(["Meu dia", "Logística", "Entregas", "Estoque", "Ordens de compra"]);
-    expect(allowedMenu(permissionsFor("FINANCEIRO", DEFAULT_MATRIX)).map((m) => m.label)).toEqual(["Meu dia", "Dashboard", "Financeiro"]);
+    expect(com).toEqual(["Meu dia", "Pedidos", "Orçamentos", "Funil de orçamentos", "Mercado Livre", "Clientes"]);
+    expect(allowedMenu(permissionsFor("EXPEDICAO", DEFAULT_MATRIX)).map((m) => m.label)).toEqual(["Meu dia", "Mercado Livre", "Logística", "Entregas", "Estoque", "Ordens de compra"]);
+    expect(allowedMenu(permissionsFor("FINANCEIRO", DEFAULT_MATRIX)).map((m) => m.label)).toEqual(["Meu dia", "Dashboard", "Mercado Livre", "Financeiro"]);
     expect(allowedMenu(permissionsFor("ADM", DEFAULT_MATRIX)).map((m) => m.label)).toContain("Usuários");
     expect(homeFor(["CUSTOMERS"])).toBe("/admin/clientes");
     expect(homeFor([])).toBe("/admin/sem-acesso");

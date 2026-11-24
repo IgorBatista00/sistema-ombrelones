@@ -422,6 +422,7 @@ model ProductVariant {
   cartItems    CartItem[]
   orderItems   OrderItem[]
   poItems      PurchaseOrderItem[]
+  mlComponents MlListingComponent[]
 
   @@index([productId])
 }
@@ -1228,9 +1229,76 @@ model MlOrderItem {
   orderStatus    String
   saleDate       DateTime
   syncedAt       DateTime @default(now())
+  // detalhes da planilha de vendas (centavos, valores totais da linha)
+  sku                  String?
+  variation            String?
+  listingId            String? // anúncio do cadastro (vinculado pelo MLB/variação ou SKU)
+  productCents         Int? // receita por produtos
+  shippingRevenueCents Int? // receita por envio (pago pelo comprador)
+  saleFeeTotalCents    Int? // tarifa de venda e impostos do ML
+  shippingFeeCents     Int? // tarifa de envio cobrada do vendedor
+  refundCents          Int?
+  netCents             Int? // total líquido informado pelo ML
+  statusText           String? // estado + descrição do status (ex.: "Pronto para enviar")
+  shipBy               DateTime? // prazo de despacho, quando a planilha informar
+  costCents            Int? // custo dos produtos vinculados (snapshot ao vincular/importar)
+
+  listing MlListing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
 
   @@unique([orderId, position])
   @@index([categoryId, saleDate])
+  @@index([listingId])
+  @@index([saleDate])
+}
+
+/// Anúncio do Mercado Livre no cadastro interno: produtos que saem do estoque a cada unidade vendida e custos de venda.
+model MlListing {
+  id                String   @id @default(cuid())
+  mlItemId          String? // MLB…
+  variation         String   @default("") // texto da variação como vem na planilha ("" = todas)
+  sku               String?
+  title             String
+  listingType       String? // classico | premium
+  status            String   @default("ATIVO") // ATIVO | PAUSADO | ENCERRADO
+  priceCents        Int? // preço atual do anúncio (simulação de lucro)
+  saleFeeBps        Int? // tarifa de venda % × 100 (usada quando a planilha não trouxer)
+  fixedFeeCents     Int? // tarifa fixa por unidade
+  shippingCostCents Int? // frete por unidade pago pelo vendedor
+  packagingCents    Int? // embalagem por unidade
+  taxBps            Int? // imposto sobre a venda % × 100
+  otherCostCents    Int? // outros custos por unidade
+  notes             String?
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  components MlListingComponent[]
+  orderItems MlOrderItem[]
+
+  @@unique([mlItemId, variation])
+  @@index([sku])
+}
+
+model MlListingComponent {
+  id        String @id @default(cuid())
+  listingId String
+  variantId String
+  quantity  Int    @default(1) // unidades deste produto em 1 unidade vendida do anúncio (kits)
+
+  listing MlListing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([listingId, variantId])
+  @@index([variantId])
+}
+
+/// Controle interno por venda do ML (expedição). Não é apagado ao reimportar a planilha.
+model MlOrderControl {
+  orderId     String    @id
+  shippedAt   DateTime?
+  shippedById String?
+  notes       String?
+  updatedAt   DateTime  @updatedAt
 }
 
 /// Cache dos nomes de categoria do Mercado Livre (GET /categories/{id}).

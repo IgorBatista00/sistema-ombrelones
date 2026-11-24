@@ -10,7 +10,7 @@ export function MlSheetImportButton() {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [prev, setPrev] = useState<MlImportPreview | null>(null);
-  const [done, setDone] = useState<{ created: number; updated: number; skipped: number } | null>(null);
+  const [done, setDone] = useState<{ created: number; updated: number; skipped: number; stockMoves?: number; negative?: string[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const input = useRef<HTMLInputElement>(null);
@@ -36,7 +36,8 @@ export function MlSheetImportButton() {
             <h2 className="font-sans text-lg font-medium">Importar vendas do Mercado Livre (planilha)</h2>
             {done ? (
               <div className="mt-5 space-y-4 text-sm">
-                <p className="rounded border border-success/40 bg-success/5 p-3" role="status"><b>Importação concluída.</b> {done.created} venda(s) nova(s) · {done.updated} atualizada(s){done.skipped ? ` · ${done.skipped} ignorada(s) (já vieram pela integração)` : ""}.</p>
+                <p className="rounded border border-success/40 bg-success/5 p-3" role="status"><b>Importação concluída.</b> {done.created} venda(s) nova(s) · {done.updated} atualizada(s){done.skipped ? ` · ${done.skipped} ignorada(s) (já vieram pela integração)` : ""}.{done.stockMoves ? ` Estoque: ${done.stockMoves} movimentação(ões) pelos anúncios vinculados.` : ""}</p>
+                {!!done.negative?.length && <p className="mt-2 rounded border border-warning/40 bg-warning/5 p-3 text-sm">Atenção: o estoque ficou negativo em {done.negative.join(", ")}. Confira o saldo em Estoque.</p>}
                 <div className="flex justify-end"><button className="h-10 rounded bg-accent px-5 text-sm text-accent-ink" onClick={() => setOpen(false)}>Fechar</button></div>
               </div>
             ) : (

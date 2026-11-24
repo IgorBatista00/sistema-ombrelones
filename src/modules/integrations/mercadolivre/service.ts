@@ -1,4 +1,5 @@
 import "server-only";
+import { applyMlStock, relinkItems } from "@/modules/mercadolivre/service";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -78,6 +79,9 @@ export async function syncMercadoLivre(actorId: string, days = 30) {
       const c = await getCategory(token, id);
       if (c) await db.mlCategory.upsert({ where: { id }, update: { name: c.name, path: categoryPath(c), fetchedAt: new Date() }, create: { id, name: c.name, path: categoryPath(c) } });
     }
+    // vínculo com os anúncios do cadastro e baixa de estoque (mesma regra da planilha)
+    const syncedIds = (await db.mlOrderItem.findMany({ where: { saleDate: { gte: from } }, select: { orderId: true }, distinct: ["orderId"] })).map((x) => x.orderId);
+    await db.$transaction(async (tx) => { await relinkItems(tx, syncedIds); await applyMlStock(tx, actorId, syncedIds); }, { timeout: 120_000 });
     await db.mlConnection.update({ where: { id: "default" }, data: { lastSyncAt: new Date(), lastSyncError: null } });
     await db.auditLog.create({ data: { actorId, action: "mercadolivre.sync", entity: "MlConnection", entityId: "default", after: { days, orders, saved, withRelease } } });
     return { orders, saved, withRelease, capped: orders >= MAX_ORDERS_PER_SYNC };

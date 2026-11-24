@@ -1,0 +1,215 @@
+import Link from "next/link";
+import { requireAdminPage } from "@/modules/auth/session";
+import { formatBRL } from "@/lib/money";
+import { PageHead } from "@/components/admin/ui";
+import { Badge } from "@/components/ui/misc";
+import { Button } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/field";
+import { MlSheetImportButton } from "@/components/admin/ml-sheet-import";
+import { ApplyStockButton, DeleteListingButton, ListingButton, ShipButton, ShipQueueSelect, StockFromForm } from "@/components/admin/ml";
+import { emptyListing, listingInitFrom } from "@/modules/mercadolivre/listing-form";
+import { listingFormOptions, mlFilterSchema, mlListingsView, mlPeriod, mlProfitByListing, mlSalesView, mlShippingQueue } from "@/modules/mercadolivre/service";
+import { SHIP_STAGE, fmtPct } from "@/modules/mercadolivre/rules";
+import { spDay } from "@/modules/purchase-orders/rules";
+
+export const metadata = { title: "Mercado Livre" };
+const d = (x: Date | null) => (x ? x.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—");
+const dt = (x: Date) => x.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const pct = (bps: number | null) => (bps == null ? "—" : `${(bps / 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`);
+const money = (c: number) => <span className={c < 0 ? "text-danger" : ""}>{formatBRL(c)}</span>;
+
+export default async function MercadoLivrePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const { admin } = await requireAdminPage(["ORDERS", "FINANCE", "LOGISTICS"]);
+  const has = (p: string) => admin.permissions.includes(p as never);
+  const can = { profit: has("FINANCE") || has("PRODUCTS"), ship: has("LOGISTICS") || has("ORDERS"), stock: has("STOCK"), imp: has("FINANCE") || has("ORDERS") };
+  const f = mlFilterSchema.parse(await searchParams);
+  const tabs = ([["vendas", "Vendas"], ["enviar", "A enviar"], ["anuncios", "Anúncios"], ["lucro", "Lucro por anúncio"]] as const).filter(([k]) => (k === "anuncios" || k === "lucro" ? can.profit : true));
+  const aba = tabs.some(([k]) => k === f.aba) ? f.aba! : !has("ORDERS") && !has("FINANCE") ? "enviar" : "vendas";
+  const { de, ate } = mlPeriod(f);
+  const qs = (patch: Record<string, string | undefined>) => { const p = new URLSearchParams(); for (const [k, v] of Object.entries({ ...f, ...patch })) if (v) p.set(k, v); return `/admin/mercadolivre?${p}`; };
+  const variants = can.profit && (aba === "anuncios" || aba === "lucro" || aba === "vendas") ? await listingFormOptions() : [];
+
+  const period = (
+    <form className="card mb-5 flex flex-wrap items-end gap-3 p-4" role="search">
+      <input type="hidden" name="aba" value={aba} />
+      <fieldset className="text-xs text-muted"><legend>Período da venda</legend><div className="mt-1 flex items-center gap-1.5"><Input type="date" name="de" defaultValue={de} className="h-10 w-[150px]" aria-label="De" /><span>até</span><Input type="date" name="ate" defaultValue={ate} className="h-10 w-[150px]" aria-label="Até" /></div></fieldset>
+      {aba === "vendas" && <>
+        <label className="block min-w-[200px] flex-1 text-xs text-muted">Buscar<Input name="q" defaultValue={f.q} placeholder="Nº da venda, comprador, anúncio, MLB ou SKU" className="mt-1 h-10" /></label>
+        <label className="block text-xs text-muted">Envio<Select name="envio" defaultValue={f.envio ?? ""} className="mt-1 h-10"><option value="">Todos</option>{(["a_enviar", "enviada", "entregue", "problema", "cancelada", "outra"] as const).map((k) => <option key={k} value={k}>{SHIP_STAGE[k].label}</option>)}</Select></label>
+        <label className="block text-xs text-muted">Anúncio<Select name="vinculo" defaultValue={f.vinculo ?? ""} className="mt-1 h-10"><option value="">Todos</option><option value="sem">Sem anúncio cadastrado</option><option value="com">Com anúncio cadastrado</option></Select></label>
+      </>}
+      <Button type="submit" className="h-10">Filtrar</Button>
+    </form>
+  );
+
+  return (
+    <>
+      <PageHead title="Mercado Livre" subtitle={can.profit ? "Vendas, expedição, anúncios e lucro. As vendas entram pela planilha exportada do Mercado Livre." : "Vendas e expedição. As vendas entram pela planilha exportada do Mercado Livre."} action={can.imp ? <MlSheetImportButton /> : undefined} />
+      <nav className="mb-5 flex gap-1 overflow-x-auto border-b border-line" aria-label="Visão">
+        {tabs.map(([k, l]) => <Link key={k} href={qs({ aba: k, envio: undefined, q: undefined, vinculo: undefined, anuncio: undefined })} aria-current={aba === k ? "page" : undefined} className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm ${aba === k ? "border-ink font-medium" : "border-transparent text-muted hover:text-ink"}`}>{l}</Link>)}
+      </nav>
+      {aba === "vendas" && <Sales f={f} period={period} can={can} />}
+      {aba === "enviar" && <ToShip can={can} />}
+      {aba === "anuncios" && <Listings f={f} period={period} variants={variants} can={can} />}
+      {aba === "lucro" && <Profit f={f} period={period} />}
+    </>
+  );
+}
+
+type Can = { profit: boolean; ship: boolean; stock: boolean; imp: boolean };
+
+async function Sales({ f, period, can }: { f: Parameters<typeof mlSalesView>[0]; period: React.ReactNode; can: Can }) {
+  const { rows, summary: s, stockFrom, pendingStock } = await mlSalesView(f);
+  const cards: [string, React.ReactNode, string?][] = [
+    ["Vendas", s.orders, s.cancelled ? `${s.cancelled} cancelada(s)` : undefined], ["Unidades", s.units], ["Faturamento (produtos)", formatBRL(s.product)],
+    ...(can.profit ? ([["Tarifas e fretes ML", formatBRL(s.fees)], ["Custo dos produtos", formatBRL(s.cost), s.costMissing ? `${s.costMissing} venda(s) sem custo` : undefined], ["Lucro", money(s.profit), `margem ${pct(s.marginBps)}`]] as [string, React.ReactNode, string?][]) : []),
+    ["A enviar", s.toShip, s.problems ? `${s.problems} com atenção` : undefined],
+  ];
+  return (
+    <>
+      {period}
+      <div className="mb-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-7">{cards.map(([l, v, h]) => <div key={l} className="card p-4"><p className="label">{l}</p><p className="mt-1 text-lg font-medium">{v}</p>{h && <p className="text-xs text-muted">{h}</p>}</div>)}</div>
+      {(s.unlinked > 0 || s.estimated > 0) && can.profit && (
+        <p className="card mb-4 border-l-4 p-3 text-sm">
+          {s.unlinked > 0 && <>{s.unlinked} venda(s) de anúncios ainda não cadastrados: sem custo nem baixa de estoque. <Link className="link" href="/admin/mercadolivre?aba=anuncios">Cadastrar anúncios</Link>. </>}
+          {s.estimated > 0 && <>{s.estimated} venda(s) com tarifa/frete estimados pelo cadastro do anúncio (a planilha não trouxe).</>}
+        </p>
+      )}
+      {can.stock && stockFrom && pendingStock > 0 && <div className="mb-4"><ApplyStockButton pending={pendingStock} /></div>}
+      {rows.length === 0 && <p className="card p-8 text-center text-sm text-muted">Nenhuma venda no período. Importe a planilha em “Importar planilha do Mercado Livre”.</p>}
+      <div className="space-y-2">
+        {rows.map((r) => (
+          <div key={r.orderId} className={`card grid gap-3 p-4 text-sm lg:grid-cols-[1fr_1.6fr_auto] ${r.cancelled ? "opacity-60" : ""}`} data-ml-order={r.orderId}>
+            <div>
+              <div className="flex flex-wrap items-center gap-2"><span className="font-medium">Venda {r.orderId}</span><Badge tone={r.stageTone}>{r.stageLabel}</Badge></div>
+              <p className="text-xs text-muted">{dt(r.saleDate)}{r.buyer ? ` · ${r.buyer}` : ""}</p>
+              <p className="mt-1 text-xs text-muted">{r.statusText}</p>
+              {r.shipBy && r.stage === "a_enviar" && <p className="text-xs">Despachar até {d(r.shipBy)}</p>}
+            </div>
+            <ul className="space-y-1 text-xs">{r.lines.map((l) => (
+              <li key={l.id}>
+                <span className="font-medium">{l.quantity}×</span> {l.title} <span className="text-muted">({l.itemId}{l.sku ? ` · SKU ${l.sku}` : ""})</span>
+                {!l.listingId && <Badge tone="warning">sem anúncio cadastrado</Badge>}
+              </li>))}
+            </ul>
+            <div className="text-right text-xs">
+              <p className="text-sm font-medium">{formatBRL(r.product)}</p>
+              {can.profit && !r.cancelled && <>
+                <p className="text-muted">ML: −{formatBRL(r.fees + r.shipping)}{r.estimated ? " (est.)" : ""} · custo: {r.costMissing ? "?" : `−${formatBRL(r.cost)}`}</p>
+                <p>Lucro {r.costMissing ? <span className="text-warning">sem custo</span> : <>{money(r.profit)} <span className="text-muted">({pct(r.marginBps)})</span></>}</p>
+              </>}
+              {r.linked && !r.cancelled && (r.stocked ? <p className="text-muted">Estoque baixado</p> : stockFrom && spDay(r.saleDate) >= stockFrom ? <p className="text-warning">Estoque não baixado</p> : null)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+async function ToShip({ can }: { can: Can }) {
+  const q = await mlShippingQueue();
+  return (
+    <>
+      <p className="mb-4 text-sm text-muted">Vendas com status “a enviar” na última planilha importada (até 60 dias). Ao despachar, marque aqui: a venda sai desta lista mesmo antes da próxima planilha.</p>
+      {q.length === 0 ? <p className="card p-8 text-center text-sm text-muted">Nada a enviar. 🎉</p> : (
+        <>
+          {can.ship && <ShipQueueSelect ids={q.map((r) => r.orderId)} />}
+          <ul className="space-y-2">
+            {q.map((r) => (
+              <li key={r.orderId} className={`card grid gap-3 p-4 text-sm md:grid-cols-[auto_1fr_1.4fr_auto] ${r.late ? "border-l-4 border-l-[#a24a3a]" : ""}`} data-ml-ship-row={r.orderId}>
+                {can.ship ? <input type="checkbox" className="mt-1" value={r.orderId} data-ship-sel aria-label={`Selecionar venda ${r.orderId}`} /> : <span />}
+                <div>
+                  <p className="font-medium">Venda {r.orderId}</p>
+                  <p className="text-xs text-muted">Vendida em {d(r.saleDate)} · há {r.ageDays} dia(s){r.buyer ? ` · ${r.buyer}` : ""}</p>
+                  {r.shipBy ? <p className={`text-xs ${r.late ? "font-medium text-danger" : r.dueToday ? "font-medium text-warning" : ""}`}>{r.late ? "Prazo de despacho vencido" : r.dueToday ? "Despachar hoje" : "Despachar até"} · {d(r.shipBy)}</p> : <p className="text-xs text-muted">Prazo de despacho: veja no Mercado Livre (a planilha não trouxe)</p>}
+                </div>
+                <div className="text-xs"><p className="label">Separar</p><ul className="mt-1 space-y-0.5">{r.pick.map((p, i) => <li key={i}><span className="font-medium">{p.quantity}×</span> {p.sku} · {p.name}</li>)}</ul></div>
+                <div className="flex items-start justify-end">{can.ship && <ShipButton orderIds={[r.orderId]} shipped label="Despachada" />}</div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
+async function Listings({ f, period, variants, can }: { f: Parameters<typeof mlListingsView>[0]; period: React.ReactNode; variants: Awaited<ReturnType<typeof listingFormOptions>>; can: Can }) {
+  const v = await mlListingsView(f);
+  return (
+    <>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+        <p className="max-w-2xl text-sm text-muted">Cadastre cada anúncio com os produtos que ele vende (inclusive kits) e os custos de venda. As vendas são ligadas sozinhas pelo nº do anúncio (MLB), pela variação ou pelo SKU.</p>
+        <ListingButton label="Cadastrar anúncio" initial={emptyListing()} variants={variants} />
+      </div>
+      {can.stock && (
+        <div className="card mb-5 p-4 text-sm">
+          <p className="font-medium">Baixa automática de estoque</p>
+          <p className="mb-3 text-xs text-muted">Cada venda importada de um anúncio cadastrado tira os produtos do estoque e uma venda cancelada devolve. Reimportar a planilha não baixa de novo. Escolha a data a partir da qual vale, para não descontar de novo vendas antigas que o estoque já reflete.</p>
+          <StockFromForm current={v.stockFrom} />
+          {!v.stockFrom && <p className="mt-2 text-xs text-warning">Desligada: as vendas não estão mexendo no estoque.</p>}
+        </div>
+      )}
+      {period}
+      <div className="card overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Anúncio", "Produtos", "Preço", "Custos de venda", "Custo produtos", "Lucro/unid.", "Vendidas", ""].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3 font-normal">{h}</th>)}</tr></thead>
+          <tbody className="divide-y divide-line">{v.listings.map((l) => (
+            <tr key={l.id} className={l.status !== "ATIVO" ? "text-muted" : ""} data-ml-listing-row={l.mlItemId ?? l.sku ?? l.id}>
+              <td className="min-w-48 px-4 py-3"><p className="font-medium">{l.title}</p><p className="text-xs text-muted">{[l.mlItemId, l.variation, l.sku && `SKU ${l.sku}`].filter(Boolean).join(" · ")}{l.status !== "ATIVO" ? ` · ${l.status === "PAUSADO" ? "Pausado" : "Encerrado"}` : ""}</p></td>
+              <td className="whitespace-nowrap px-4 py-3 text-xs">{l.components.length ? l.components.map((c) => <p key={c.variantId}>{c.quantity}× {c.sku}{c.mto ? " (encomenda)" : ""}</p>) : <span className="text-warning">nenhum produto</span>}</td>
+              <td className="whitespace-nowrap px-4 py-3">{l.priceCents != null ? formatBRL(l.priceCents) : "—"}</td>
+              <td className="px-4 py-3 text-xs">{[l.saleFeeBps != null && `tarifa ${fmtPct(l.saleFeeBps)}%`, l.fixedFeeCents && `fixa ${formatBRL(l.fixedFeeCents)}`, l.shippingCostCents && `frete ${formatBRL(l.shippingCostCents)}`, l.packagingCents && `embal. ${formatBRL(l.packagingCents)}`, l.taxBps != null && `imposto ${fmtPct(l.taxBps)}%`, l.otherCostCents && `outros ${formatBRL(l.otherCostCents)}`].filter(Boolean).join(" · ") || "—"}</td>
+              <td className="whitespace-nowrap px-4 py-3">{l.costMissing ? <span className="text-warning">falta custo</span> : formatBRL(l.unitCostCents ?? 0)}</td>
+              <td className="whitespace-nowrap px-4 py-3">{l.simulation && !l.simulation.costMissing ? <>{money(l.simulation.profit)} <span className="text-xs text-muted">({pct(l.simulation.marginBps)})</span></> : "—"}</td>
+              <td className="px-4 py-3">{l.soldUnits}</td>
+              <td className="px-4 py-3 text-right"><div className="flex flex-col items-end gap-1"><ListingButton label="Editar" variant="secondary" initial={listingInitFrom(l)} variants={variants} /><DeleteListingButton id={l.id} title={l.title} /></div></td>
+            </tr>))}</tbody>
+        </table>
+        {v.listings.length === 0 && <p className="p-8 text-center text-sm text-muted">Nenhum anúncio cadastrado ainda.</p>}
+      </div>
+      {v.unlinked.length > 0 && (
+        <section className="mt-6">
+          <h2 className="mb-2 font-sans text-base font-medium">Vendidos e ainda sem cadastro</h2>
+          <p className="mb-3 text-xs text-muted">Anúncios que aparecem nas vendas importadas mas não estão cadastrados. Cadastre para ter custo, lucro e baixa de estoque.</p>
+          <div className="card overflow-x-auto"><table className="w-full text-left text-sm">
+            <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Anúncio", "Unidades vendidas", "Última venda", ""].map((h) => <th key={h} className="px-4 py-3 font-normal">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-line">{v.unlinked.slice(0, 50).map((u) => (
+              <tr key={`${u.itemId}|${u.variation}`} data-ml-unlinked={u.itemId}>
+                <td className="px-4 py-3"><p>{u.title}</p><p className="text-xs text-muted">{u.itemId}{u.variation ? ` · ${u.variation}` : ""}{u.sku ? ` · SKU ${u.sku}` : ""}</p></td>
+                <td className="px-4 py-3">{u.units}</td><td className="px-4 py-3">{d(u.lastSale)}</td>
+                <td className="px-4 py-3 text-right"><ListingButton label="Cadastrar" variant="secondary" variants={variants} initial={emptyListing({ mlItemId: /^[A-Z]{3}\d+$/.test(u.itemId) ? u.itemId : "", variation: u.variation, sku: u.sku ?? "", title: u.title.replace(/ — .*$/, ""), price: u.lastPriceCents != null ? (u.lastPriceCents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "" })} /></td>
+              </tr>))}</tbody>
+          </table></div>
+        </section>
+      )}
+    </>
+  );
+}
+
+async function Profit({ f, period }: { f: Parameters<typeof mlProfitByListing>[0]; period: React.ReactNode }) {
+  const { list } = await mlProfitByListing(f);
+  const tot = list.reduce((a, m) => ({ product: a.product + m.product, profit: a.profit + m.profit, units: a.units + m.units }), { product: 0, profit: 0, units: 0 });
+  return (
+    <>
+      {period}
+      <div className="card overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Anúncio", "Unidades", "Faturamento", "Tarifas e fretes ML", "Custo produtos", "Embalagem, impostos e outros", "Lucro", "Margem", "Lucro/unid."].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3 font-normal">{h}</th>)}</tr></thead>
+          <tbody className="divide-y divide-line">{list.map((m) => (
+            <tr key={(m.listingId ?? "") + m.title} data-ml-profit={m.title}>
+              <td className="px-4 py-3">{m.listingId ? m.title : <span className="text-muted">{m.title}</span>}{m.estimated && <span className="ml-1 text-xs text-muted">(tarifas est.)</span>}</td>
+              <td className="px-4 py-3">{m.units}</td><td className="whitespace-nowrap px-4 py-3">{formatBRL(m.product)}</td><td className="whitespace-nowrap px-4 py-3">{formatBRL(m.fees)}</td>
+              <td className="whitespace-nowrap px-4 py-3">{m.costMissing ? <span className="text-warning">incompleto</span> : formatBRL(m.cost)}</td><td className="whitespace-nowrap px-4 py-3">{formatBRL(m.extras)}</td>
+              <td className="whitespace-nowrap px-4 py-3 font-medium">{m.costMissing ? <span className="text-warning">—</span> : money(m.profit)}</td>
+              <td className="px-4 py-3">{m.costMissing ? "—" : pct(m.marginBps)}</td><td className="whitespace-nowrap px-4 py-3">{m.costMissing ? "—" : formatBRL(m.unitProfit)}</td>
+            </tr>))}</tbody>
+          {list.length > 0 && <tfoot className="border-t border-line text-sm font-medium"><tr><td className="px-4 py-3">Total</td><td className="px-4 py-3">{tot.units}</td><td className="px-4 py-3">{formatBRL(tot.product)}</td><td colSpan={3} /><td className="px-4 py-3">{money(tot.profit)}</td><td className="px-4 py-3">{pct(tot.product ? Math.round((tot.profit / tot.product) * 10000) : null)}</td><td /></tr></tfoot>}
+        </table>
+        {list.length === 0 && <p className="p-8 text-center text-sm text-muted">Nenhuma venda no período.</p>}
+      </div>
+      <p className="mt-3 text-xs text-muted">Lucro = faturamento + frete recebido − tarifas e frete do ML − reembolsos − custo dos produtos (custo médio do estoque no momento da venda) − embalagem, impostos e outros do cadastro do anúncio. Vendas canceladas não entram.</p>
+    </>
+  );
+}

@@ -7,6 +7,7 @@ export const MENU: { href: string; label: string; perm: AdminPermission | AdminP
   { href: "/admin/pedidos", label: "Pedidos", perm: "ORDERS" },
   { href: "/admin/orcamentos", label: "Orçamentos", perm: "ORDERS" },
   { href: "/admin/funil", label: "Funil de orçamentos", perm: "ORDERS" },
+  { href: "/admin/mercadolivre", label: "Mercado Livre", perm: ["ORDERS", "FINANCE", "LOGISTICS"] },
   { href: "/admin/logistica", label: "Logística", perm: "LOGISTICS" },
   { href: "/admin/entregas", label: "Entregas", perm: "LOGISTICS" },
   { href: "/admin/produtos", label: "Produtos", perm: "PRODUCTS" },

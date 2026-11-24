@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAdminPage } from "@/modules/auth/session";
 import { purchaseOrdersForDay } from "@/modules/purchase-orders/service";
+import { mlShippingSummary } from "@/modules/mercadolivre/service";
 import { myDay } from "@/modules/admin/my-day";
 import { itemsSummary, resolveDay } from "@/modules/admin/my-day-rules";
 import { DELIVERY_STATUS } from "@/modules/deliveries/rules";
@@ -26,7 +27,7 @@ function Section({ id, title, count, action, children }: { id: string; title: st
 }
 /** Situação da integração com o Mercado Livre (a sincronização é feita sob demanda). */
 function MlStatus({ ml, canSync }: { ml: { connected: boolean; nickname: string | null; lastSyncAt: Date | null; lastSyncError: string | null }; canSync: boolean }) {
-  if (!ml.connected) return <p className="mb-3 text-xs text-muted" data-ml-status>Mercado Livre sem integração direta: aqui aparecem as vendas importadas por planilha em <Link className="link" href="/admin/financeiro?aba=mercadolivre">Financeiro › Recebimentos Mercado Livre</Link> (importe a do dia para vê-las).</p>;
+  if (!ml.connected) return <p className="mb-3 text-xs text-muted" data-ml-status>Mercado Livre sem integração direta: aqui aparecem as vendas importadas por planilha em <Link className="link" href="/admin/mercadolivre">Mercado Livre</Link> (importe a do dia para vê-las).</p>;
   const when = ml.lastSyncAt ? `${ml.lastSyncAt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} às ${hour(ml.lastSyncAt)}` : "nunca";
   return (
     <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded bg-ink/[0.03] px-3 py-2 text-xs" data-ml-status>
@@ -59,7 +60,8 @@ export default async function MyDay({ searchParams }: { searchParams: Promise<{ 
   const { admin } = await requireAdminPage(["DASHBOARD", "ORDERS", "LOGISTICS", "FINANCE", "STOCK"]);
   const d = resolveDay((await searchParams).data);
   const canStock = admin.permissions.includes("STOCK");
-  const [m, po] = await Promise.all([myDay(d.day, admin.permissions), canStock ? purchaseOrdersForDay(d.day) : null]);
+  const canMlShip = ["LOGISTICS", "ORDERS"].some((p) => admin.permissions.includes(p as never));
+  const [m, po, mlShip] = await Promise.all([myDay(d.day, admin.permissions), canStock ? purchaseOrdersForDay(d.day) : null, canMlShip ? mlShippingSummary() : null]);
   const title = new Date(`${d.day}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const quoteTotal = m.quotes.rows.length;
   const dl = m.deliveries, toDeliverCount = dl.today.length + dl.late.length;
@@ -85,6 +87,7 @@ export default async function MyDay({ searchParams }: { searchParams: Promise<{ 
         {m.can.sales && <Kpi label={`Vendas ${day}`} value={formatBRL(m.sales.total)} hint={`${m.sales.count} venda(s) · ${m.soldItems.reduce((a, i) => a + i.quantity, 0)} item(ns)${m.sales.ml.length ? ` · ${formatBRL(m.sales.byChannel.ml)} no Mercado Livre` : ""}`} href="#vendas" />}
         {m.can.orders && <Kpi label={`Orçamentos feitos ${day}`} value={String(quoteTotal)} hint={quoteTotal ? `${formatBRL(m.quotes.total)} orçados` : "Nenhum orçamento"} href="#orcamentos" />}
         {m.can.logistics && <Kpi label="Entregas" value={String(toDeliverCount)} hint={`${dl.today.length} para ${day} · ${dl.late.length} atrasada(s) · ${dl.delivered.length} entregue(s)${dl.undated ? ` · ${dl.undated} sem data` : ""}`} href="#entregas" tone={dl.late.length ? "danger" : undefined} />}
+        {mlShip && mlShip.total > 0 && <Kpi label="Mercado Livre a enviar" value={String(mlShip.total)} hint={`${mlShip.late} com prazo vencido · ${mlShip.today} para despachar hoje`} href="/admin/mercadolivre?aba=enviar" tone={mlShip.late ? "danger" : undefined} />}
         {po && <Kpi label="Compras a chegar" value={String(po.today.length + po.late.length)} hint={`${po.today.length} prevista(s) para ${day} · ${po.late.length} atrasada(s) · ${po.received.length} entrega(s) recebida(s)`} href="#compras" tone={po.late.length ? "danger" : undefined} />}
         {m.can.finance && <Kpi label={`Vencendo ${day}`} value={formatBRL(m.due.receivableTotal)} hint={`a receber (${m.due.receivables.length}) · ${formatBRL(m.due.expenseTotal)} a pagar (${m.due.expenses.length})`} href="#vencimentos" />}
       </div>

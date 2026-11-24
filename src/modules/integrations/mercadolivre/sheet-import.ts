@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { readMatrix } from "@/modules/products/excel";
 import { findHeader, parseMlRow, type MlSheetRow } from "./sheet-rules";
+import { applyMlStock, relinkItems } from "@/modules/mercadolivre/service";
 
 /** Recebimentos vindos de planilha usam este prefixo no paymentId (a integração direta usa o id real do pagamento). */
 export const SHEET_PREFIX = "PLAN-";
@@ -65,6 +66,7 @@ export async function commitMlSheet(actorId: string, buf: Buffer, filename: stri
   const { orders } = await analyze(buf, filename);
   const todo = orders.filter((o) => o.action !== "ignorar");
   if (!todo.length) throw new AppError("NOTHING", "Nenhuma venda para importar (todas já vieram pela integração ou a planilha só tem erros).", 422);
+  let stock = { moved: 0, negative: [] as string[] };
   await db.$transaction(async (tx) => {
     for (const o of todo) {
       const data = {
@@ -74,13 +76,21 @@ export async function commitMlSheet(actorId: string, buf: Buffer, filename: stri
         raw: { source: "planilha", file: filename.slice(0, 120), lines: o.lines, status: o.status } as Prisma.InputJsonValue, syncedAt: new Date(),
       };
       await tx.mlReceipt.upsert({ where: { paymentId: data.paymentId }, update: data, create: data });
+      // custo já "congelado" de uma importação anterior é mantido (o lucro histórico não muda com compras novas)
+      const prev = new Map((await tx.mlOrderItem.findMany({ where: { orderId: o.orderId }, select: { itemId: true, variation: true, costCents: true, quantity: true } })).map((p) => [`${p.itemId}|${p.variation ?? ""}|${p.quantity}`, p.costCents]));
       await tx.mlOrderItem.deleteMany({ where: { orderId: o.orderId } });
       await tx.mlOrderItem.createMany({ data: o.rows.map((r, i) => ({
         orderId: o.orderId, position: i, itemId: r.itemId ?? r.sku ?? "PLANILHA", title: r.title, categoryId: null, quantity: r.quantity, unitPriceCents: r.unitPriceCents,
-        saleFeeCents: r.feeCents != null ? Math.round(r.feeCents / r.quantity) : null, orderStatus: r.cancelled ? "cancelled" : "paid", saleDate: r.saleDate,
+        saleFeeCents: r.saleFeeCents != null ? Math.round(r.saleFeeCents / r.quantity) : null, orderStatus: r.cancelled ? "cancelled" : "paid", saleDate: r.saleDate,
+        sku: r.sku, variation: r.variation, productCents: r.productCents, shippingRevenueCents: r.shippingCents, saleFeeTotalCents: r.saleFeeCents, shippingFeeCents: r.shippingFeeCents,
+        refundCents: r.refundCents, netCents: r.totalCents, statusText: r.status.slice(0, 200), shipBy: r.shipBy,
+        costCents: prev.get(`${r.itemId ?? r.sku ?? "PLANILHA"}|${r.variation ?? ""}|${r.quantity}`) ?? null,
       })) });
     }
+    const ids = todo.map((o) => o.orderId);
+    await relinkItems(tx, ids);
+    stock = await applyMlStock(tx, actorId, ids);
     await tx.auditLog.create({ data: { actorId, action: "mercadolivre.sheet_import", entity: "MlReceipt", entityId: "planilha", after: { file: filename.slice(0, 120), created: todo.filter((o) => o.action === "criar").length, updated: todo.filter((o) => o.action === "atualizar").length } } });
   }, { timeout: 120_000 });
-  return { created: todo.filter((o) => o.action === "criar").length, updated: todo.filter((o) => o.action === "atualizar").length, skipped: orders.length - todo.length };
+  return { created: todo.filter((o) => o.action === "criar").length, updated: todo.filter((o) => o.action === "atualizar").length, skipped: orders.length - todo.length, stockMoves: stock.moved, negative: stock.negative };
 }

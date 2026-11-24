@@ -3,7 +3,7 @@
  * O relatório tem linhas de título antes do cabeçalho e os nomes das colunas variam um pouco: por isso o cabeçalho
  * é procurado nas primeiras linhas e as colunas são reconhecidas pelo nome (sem acento, minúsculas).
  */
-export type MlSheetField = "order" | "date" | "status" | "statusDesc" | "units" | "productRevenue" | "shippingRevenue" | "fee" | "shippingFee" | "refunds" | "total" | "sku" | "itemId" | "title" | "variation" | "unitPrice" | "buyer" | "pack";
+export type MlSheetField = "order" | "date" | "status" | "statusDesc" | "units" | "productRevenue" | "shippingRevenue" | "fee" | "shippingFee" | "refunds" | "total" | "sku" | "itemId" | "title" | "variation" | "unitPrice" | "buyer" | "pack" | "shipBy";
 
 const norm = (h: string) => h.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[ºª°]/g, "").replace(/[^a-z0-9#]+/g, " ").trim();
 
@@ -12,6 +12,7 @@ export function fieldOf(header: string): MlSheetField | null {
   const h = norm(header);
   if (!h) return null;
   if (/^(n|no|nr|numero|#)( o)? (de |da )?venda$/.test(h) || h === "venda" || h === "id da venda" || h === "numero do pedido" || h === "pedido") return "order";
+  if (/^(data )?limite (de |para )?(despacho|envio|postagem|entrega na transportadora)/.test(h) || /^(despachar|enviar|postar) ate/.test(h)) return "shipBy";
   if (/^data (da )?venda$/.test(h) || h === "data") return "date";
   if (/^descricao (do )?(status|estado)$/.test(h)) return "statusDesc";
   if (h === "estado" || h === "status" || h === "situacao") return "status";
@@ -79,6 +80,7 @@ export const isCancelled = (status: string) => /cancel|devolu|reembols|nao concr
 export type MlSheetRow = {
   line: number; orderId: string; saleDate: Date; status: string; cancelled: boolean; title: string; itemId: string | null; sku: string | null; variation: string | null;
   quantity: number; unitPriceCents: number; productCents: number; shippingCents: number | null; feeCents: number | null; refundCents: number | null; totalCents: number | null; buyer: string | null;
+  saleFeeCents: number | null; shippingFeeCents: number | null; shipBy: Date | null;
 };
 export type MlSheetResult = { line: number; orderId: string; title: string; ok: MlSheetRow | null; errors: string[]; warnings: string[]; skipped: boolean };
 
@@ -113,5 +115,6 @@ export function parseMlRow(cells: string[], cols: Map<MlSheetField, number>, lin
     shippingCents: shipRev != null ? Math.abs(shipRev) : null,
     feeCents: fee != null || shipFee != null ? Math.abs(fee ?? 0) + Math.abs(shipFee ?? 0) : null,
     refundCents: refund != null ? Math.abs(refund) : null, totalCents: total, buyer: g("buyer") || null,
+    saleFeeCents: fee != null ? Math.abs(fee) : null, shippingFeeCents: shipFee != null ? Math.abs(shipFee) : null, shipBy: parseMlDate(g("shipBy")),
   } };
 }
