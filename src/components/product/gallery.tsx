@@ -41,15 +41,15 @@ export function Gallery({ images, name }: { images: Img[]; name: string }) {
         <div className="flex gap-2 overflow-x-auto md:w-20 md:flex-col" role="tablist" aria-label="Miniaturas">
           {images.map((img, i) => (
             <button key={img.id} role="tab" aria-selected={i === index} aria-label={`Imagem ${i + 1}`} onClick={() => setIndex(i)}
-              className={`relative aspect-square w-16 shrink-0 overflow-hidden rounded border md:w-full ${i === index ? "border-ink" : "border-transparent opacity-70 hover:opacity-100"}`}>
-              <Image src={img.url} alt="" fill sizes="80px" className="object-cover" />
+              className={`relative aspect-square w-16 shrink-0 overflow-hidden rounded border bg-white md:w-full ${i === index ? "border-ink" : "border-transparent opacity-70 hover:opacity-100"}`}>
+              <Image src={img.url} alt="" fill sizes="80px" className="object-contain p-1" />
             </button>
           ))}
         </div>
       )}
       <div className="relative flex-1">
-        <button className="relative block aspect-[4/5] w-full cursor-zoom-in overflow-hidden rounded bg-[#ece8e1]" onClick={() => setZoom(true)} aria-label="Ampliar imagem">
-          <Image key={current.id} src={current.url} alt={current.alt} fill priority sizes="(min-width:1024px) 55vw, 100vw" className="object-cover fade-in" />
+        <button className="relative block aspect-square max-h-[calc(100svh-10rem)] w-full cursor-zoom-in overflow-hidden rounded bg-white" onClick={() => setZoom(true)} aria-label="Ampliar imagem">
+          <Image key={current.id} src={current.url} alt={current.alt} fill priority sizes="(min-width:1024px) 55vw, 100vw" className="object-contain p-4 fade-in md:p-6" />
         </button>
         {images.length > 1 && (
           <>
