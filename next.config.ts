@@ -10,6 +10,11 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // O cliente do banco (Prisma sem binário) carrega arquivos .wasm em tempo de execução;
+  // o rastreamento automático da Vercel não os detecta, então incluímos a pasta gerada em todas as rotas.
+  outputFileTracingIncludes: {
+    "/**/*": ["./node_modules/.prisma/client/**/*"],
+  },
   images: {
     formats: ["image/avif", "image/webp"],
     // Fotos enviadas em produção ficam no Vercel Blob (store público); IMAGE_CDN_HOST para um CDN próprio, se houver.
