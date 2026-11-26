@@ -12,6 +12,7 @@ export const MENU: { href: string; label: string; perm: AdminPermission | AdminP
   { href: "/admin/entregas", label: "Entregas", perm: "LOGISTICS" },
   { href: "/admin/produtos", label: "Produtos", perm: "PRODUCTS" },
   { href: "/admin/tabela", label: "Tabela", perm: "PRODUCTS" },
+  { href: "/admin/markup", label: "Markup", perm: "PRODUCTS" },
   { href: "/admin/estoque", label: "Estoque", perm: "STOCK" },
   { href: "/admin/ordens-compra", label: "Ordens de compra", perm: "STOCK" },
   { href: "/admin/fornecedores", label: "Fornecedores", perm: "PRODUCTS" },

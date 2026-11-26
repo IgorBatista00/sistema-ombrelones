@@ -238,8 +238,11 @@ model Product {
   // Recalculado no servidor ao salvar o produto, o vínculo ou um item da tabela de custos.
   costFinalCents   Int?
   costUpdatedAt    DateTime?
-  markup           Int? // markup de venda × 10.000 (2,5 → 25000). Preço calculado = custo final × markup
+  markup           Int? // markup MANUAL × 10.000 (2,5 → 25000). Usado só quando não há perfil de markup
   markupUpdatedAt  DateTime?
+  // Perfil de markup (custos % + margens). Quando definido, o preço = custo final ÷ (1 − custos − margem ideal)
+  markupProfileId  String?
+  markupProfile    MarkupProfile? @relation(fields: [markupProfileId], references: [id], onDelete: SetNull)
   description      String?
   categoryId       String
   isActive         Boolean      @default(true) // exclusão lógica = false
@@ -270,6 +273,7 @@ model Product {
   packages  ProductPackage[]
 
   @@index([categoryId, isActive])
+  @@index([markupProfileId])
 }
 
 /// Embalagem padrão do produto (usada no frete quando a variação não tem embalagem própria).
@@ -1497,4 +1501,26 @@ model PurchaseOrderEvent {
   order PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId, createdAt])
+}
+
+/// Perfil de markup: percentuais sobre o PREÇO DE VENDA (pontos-base: 5,7% → 570).
+/// Divisor = 1 − (custos + margem). Preço = custo final ÷ divisor.
+model MarkupProfile {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  cardFeeBps       Int      @default(0) // taxa de cartão
+  extCommissionBps Int      @default(0) // comissão externa
+  intCommissionBps Int      @default(0) // comissão interna
+  taxBps           Int      @default(0) // imposto
+  packagingBps     Int      @default(0) // embalagem
+  financialBps     Int      @default(0) // financeiro
+  otherBps         Int      @default(0) // outros
+  idealMarginBps   Int      @default(0)
+  minMarginBps     Int      @default(0)
+  position         Int      @default(0)
+  createdById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  products Product[]
 }
