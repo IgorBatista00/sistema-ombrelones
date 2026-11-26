@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
 import { MlSheetImportButton } from "@/components/admin/ml-sheet-import";
 import { MlListingImportButton } from "@/components/admin/ml-listing-import";
+import { MlDashboardView } from "@/components/admin/ml-dashboard";
+import { mlDashboard } from "@/modules/mercadolivre/dashboard";
 import { ApplyStockButton, DeleteListingButton, ListingButton, ShipButton, ShipQueueSelect, StockFromForm } from "@/components/admin/ml";
 import { emptyListing, listingInitFrom } from "@/modules/mercadolivre/listing-form";
 import { listingFormOptions, mlFilterSchema, mlListingsByProduct, mlListingsView, mlPeriod, mlProfitByListing, mlSalesView, mlShippingQueue } from "@/modules/mercadolivre/service";
@@ -24,8 +26,8 @@ export default async function MercadoLivrePage({ searchParams }: { searchParams:
   const has = (p: string) => admin.permissions.includes(p as never);
   const can = { profit: has("FINANCE") || has("PRODUCTS"), ship: has("LOGISTICS") || has("ORDERS"), stock: has("STOCK"), imp: has("FINANCE") || has("ORDERS") };
   const f = mlFilterSchema.parse(await searchParams);
-  const tabs = ([["vendas", "Vendas"], ["enviar", "A enviar"], ["anuncios", "Anúncios"], ["produtos", "Anúncios por produto"], ["lucro", "Lucro por anúncio"]] as const).filter(([k]) => (k === "anuncios" || k === "produtos" || k === "lucro" ? can.profit : true));
-  const aba = tabs.some(([k]) => k === f.aba) ? f.aba! : !has("ORDERS") && !has("FINANCE") ? "enviar" : "vendas";
+  const tabs = ([["painel", "Painel"], ["vendas", "Vendas"], ["enviar", "A enviar"], ["anuncios", "Anúncios"], ["produtos", "Anúncios por produto"], ["lucro", "Lucro por anúncio"]] as const).filter(([k]) => (k === "anuncios" || k === "produtos" || k === "lucro" || k === "painel" ? can.profit : true));
+  const aba = tabs.some(([k]) => k === f.aba) ? f.aba! : !has("ORDERS") && !has("FINANCE") ? "enviar" : can.profit ? "painel" : "vendas";
   const { de, ate } = mlPeriod(f);
   const qs = (patch: Record<string, string | undefined>) => { const p = new URLSearchParams(); for (const [k, v] of Object.entries({ ...f, ...patch })) if (v) p.set(k, v); return `/admin/mercadolivre?${p}`; };
   const variants = can.profit && (aba === "anuncios" || aba === "lucro" || aba === "vendas") ? await listingFormOptions() : [];
@@ -40,6 +42,13 @@ export default async function MercadoLivrePage({ searchParams }: { searchParams:
         <label className="block text-xs text-muted">Anúncio<Select name="vinculo" defaultValue={f.vinculo ?? ""} className="mt-1 h-10"><option value="">Todos</option><option value="sem">Sem anúncio cadastrado</option><option value="com">Com anúncio cadastrado</option></Select></label>
       </>}
       <Button type="submit" className="h-10">Filtrar</Button>
+      {aba === "painel" && (() => {
+        const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+        const back = (n: number) => new Date(Date.parse(`${today}T12:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
+        const pm = new Date(Date.parse(`${today.slice(0, 8)}01T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+        const opts: [string, string, string][] = [["Mês atual", `${today.slice(0, 8)}01`, today], ["Mês anterior", `${pm.slice(0, 8)}01`, pm], ["Últimos 30 dias", back(29), today], ["Últimos 90 dias", back(89), today], ["Este ano", `${today.slice(0, 4)}-01-01`, today]];
+        return <div className="flex flex-wrap gap-1 pb-1 text-xs" data-quick-period>{opts.map(([l, a, b]) => <Link key={l} href={qs({ aba: "painel", de: a, ate: b })} className={`rounded px-3 py-1.5 ${de === a && ate === b ? "bg-ink text-canvas" : "hover:bg-ink/5"}`}>{l}</Link>)}</div>;
+      })()}
     </form>
   );
 
@@ -49,6 +58,7 @@ export default async function MercadoLivrePage({ searchParams }: { searchParams:
       <nav className="mb-5 flex gap-1 overflow-x-auto border-b border-line" aria-label="Visão">
         {tabs.map(([k, l]) => <Link key={k} href={qs({ aba: k, envio: undefined, q: undefined, vinculo: undefined, anuncio: undefined, produto: undefined, tipo: undefined })} aria-current={aba === k ? "page" : undefined} className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm ${aba === k ? "border-ink font-medium" : "border-transparent text-muted hover:text-ink"}`}>{l}</Link>)}
       </nav>
+      {aba === "painel" && <>{period}<MlDashboardView d={await mlDashboard(f)} qs={qs} /></>}
       {aba === "vendas" && <Sales f={f} period={period} can={can} />}
       {aba === "enviar" && <ToShip can={can} />}
       {aba === "anuncios" && <Listings f={f} period={period} variants={variants} can={can} qs={qs} />}

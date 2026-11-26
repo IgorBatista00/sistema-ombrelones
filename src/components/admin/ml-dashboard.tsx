@@ -1,0 +1,158 @@
+import Link from "next/link";
+import { formatBRL } from "@/lib/money";
+import type { MlDashboard } from "@/modules/mercadolivre/dashboard";
+import { Columns, TimeChart } from "./ml-charts";
+
+const pct = (bps: number | null) => (bps == null ? "—" : `${(bps / 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`);
+const share = (v: number, base: number) => (base > 0 ? `${((v / base) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "—");
+const br = (iso: string) => iso.split("-").reverse().join("/");
+const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const MONTH = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+function Delta({ now, before }: { now: number; before: number }) {
+  if (!before) return <span className="text-muted">sem base no período anterior</span>;
+  const d = (now - before) / Math.abs(before);
+  const up = d >= 0;
+  return <span className={up ? "text-success" : "text-danger"}><span aria-hidden>{up ? "▲" : "▼"}</span> {(Math.abs(d) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% <span className="text-muted">vs período anterior</span></span>;
+}
+function Tile({ label, value, children, tone }: { label: string; value: React.ReactNode; children?: React.ReactNode; tone?: "danger" | "warning" }) {
+  return <div className="card p-4" data-tile={label}><p className="label">{label}</p><p className={`mt-2 text-2xl ${tone === "danger" ? "text-danger" : tone === "warning" ? "text-warning" : ""}`}>{value}</p>{children && <p className="mt-1 text-xs">{children}</p>}</div>;
+}
+function Photo({ src, alt, size = 44 }: { src: string | null; alt: string; size?: number }) {
+  return <div className="shrink-0 overflow-hidden rounded border border-line bg-white" style={{ width: size, height: size }}>{src ? <img src={src} alt={alt} className="h-full w-full object-contain p-0.5" loading="lazy" /> : <span className="grid h-full place-items-center text-[9px] text-muted">sem foto</span>}</div>;
+}
+function Card({ title, sub, children, action }: { title: string; sub?: string; children: React.ReactNode; action?: React.ReactNode }) {
+  return <section className="card p-5"><div className="mb-3 flex items-start justify-between gap-3"><div><h3 className="font-sans text-sm font-medium">{title}</h3>{sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}</div>{action}</div>{children}</section>;
+}
+
+export function MlDashboardView({ d, qs }: { d: MlDashboard; qs: (p: Record<string, string | undefined>) => string }) {
+  const k = d.kpi;
+  const margin = k.revenue > 0 ? Math.round((k.profit * 10_000) / k.revenue) : null;
+  const ticket = k.orders ? Math.round(k.revenue / k.orders) : 0;
+  const label = (key: string) => (d.bucket === "mes" ? `${MONTH[Number(key.slice(5, 7)) - 1]}/${key.slice(2, 4)}` : dm(key));
+  const points = d.series.map((s) => ({ ...s, label: d.bucket === "semana" ? `sem. ${label(s.key)}` : label(s.key) }));
+  // para onde vai cada real vendido
+  const parts = [
+    { key: "Custo dos produtos", v: k.cost, c: "#257de0" },
+    { key: "Tarifas e fretes ML", v: k.fees, c: "#f47230" },
+    { key: "Imposto, embalagem e outros", v: k.extras, c: "#00b894" },
+    { key: "Lucro", v: Math.max(0, k.profit), c: "#f2a600" },
+  ];
+  const partsTotal = parts.reduce((a, p) => a + p.v, 0) || 1;
+  const maxTopP = Math.max(...d.topProducts.map((p) => p.revenue), 1), maxTopL = Math.max(...d.topListings.map((p) => p.revenue), 1);
+  const typeTotal = d.byType.classico.revenue + d.byType.premium.revenue || 1;
+  const stageMax = Math.max(...d.stages.map((s) => s.orders), 1);
+  const toneBar: Record<string, string> = { success: "#2f6b45", warning: "#a0702a", danger: "#a24a3a", neutral: "#8a8f87" };
+
+  if (!k.total) return <div className="card p-10 text-center text-sm text-muted">Nenhuma venda entre {br(d.de)} e {br(d.ate)}. Importe a planilha de vendas ou escolha outro período.</div>;
+
+  return (
+    <div className="space-y-5" data-ml-dashboard>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Tile label="Faturamento" value={formatBRL(k.revenue)}><Delta now={k.revenue} before={d.prev.revenue} /></Tile>
+        <Tile label="Lucro" value={formatBRL(k.profit)} tone={k.profit < 0 ? "danger" : undefined}>margem {pct(margin)} · <Delta now={k.profit} before={d.prev.profit} /></Tile>
+        <Tile label="Vendas" value={k.orders.toLocaleString("pt-BR")}>{k.units} unidade(s) · <Delta now={k.orders} before={d.prev.orders} /></Tile>
+        <Tile label="Ticket médio" value={formatBRL(ticket)}><span className="text-muted">por venda</span></Tile>
+        <Tile label="Tarifas e fretes ML" value={formatBRL(k.fees)}><span className="text-muted">{share(k.fees, k.revenue)} do faturamento</span></Tile>
+        <Tile label="Custo dos produtos" value={formatBRL(k.cost)}><span className="text-muted">{share(k.cost, k.revenue)} do faturamento</span>{k.costMissing ? <span className="text-warning"> · {k.costMissing} venda(s) sem custo</span> : null}</Tile>
+        <Tile label="Canceladas / devolvidas" value={k.cancelled} tone={k.cancelled ? "warning" : undefined}><span className="text-muted">{share(k.cancelled, k.total)} das vendas</span></Tile>
+        <Tile label="A enviar" value={<Link className="hover:underline" href={qs({ aba: "enviar" })}>{k.toShip}</Link>} tone={k.problems ? "warning" : undefined}><span className="text-muted">{k.problems ? `${k.problems} com atenção (reclamação, mediação…)` : "nenhuma com problema"}</span></Tile>
+      </div>
+
+      {(k.unlinked > 0 || k.costMissing > 0) && (
+        <p className="rounded border border-warning/40 bg-warning/[0.06] px-4 py-3 text-xs" data-dash-warn>
+          {k.unlinked > 0 && <>{k.unlinked} venda(s) de anúncios ainda não cadastrados. </>}{k.costMissing > 0 && <>{k.costMissing} venda(s) sem custo do produto — o lucro está maior do que o real. </>}
+          <Link className="link" href={qs({ aba: "anuncios" })}>Ver anúncios</Link>
+        </p>
+      )}
+
+      <Card title="Faturamento e lucro" sub={`${br(d.de)} a ${br(d.ate)} · passe o mouse no gráfico para ver cada ${d.bucket === "dia" ? "dia" : d.bucket === "semana" ? "semana" : "mês"}`}>
+        <TimeChart points={points} bucketLabel={d.bucket === "dia" ? "dia" : d.bucket === "semana" ? "semana" : "mês"} />
+      </Card>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card title="Para onde vai cada R$ 100 vendido" sub="Sobre o faturamento de produtos das vendas válidas">
+          <div className="flex h-7 w-full overflow-hidden rounded" role="img" aria-label="Composição do faturamento">
+            {parts.filter((p) => p.v > 0).map((p, i) => <div key={p.key} title={`${p.key}: ${formatBRL(p.v)} (${share(p.v, partsTotal)})`} style={{ width: `${(p.v / partsTotal) * 100}%`, background: p.c, marginLeft: i ? 2 : 0 }} />)}
+          </div>
+          <ul className="mt-4 space-y-2 text-sm">
+            {parts.map((p) => <li key={p.key} className="flex items-center gap-2"><i className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ background: p.c }} />{p.key}<span className="ml-auto font-medium">{formatBRL(p.v)}</span><span className="w-14 text-right text-xs text-muted">{share(p.v, partsTotal)}</span></li>)}
+          </ul>
+          {k.profit < 0 && <p className="mt-2 text-xs text-danger">Prejuízo de {formatBRL(-k.profit)} no período.</p>}
+        </Card>
+        <Card title="Clássico × Premium" sub="Faturamento e margem por tipo de anúncio">
+          {(["classico", "premium"] as const).map((t) => { const x = d.byType[t]; return (
+            <div key={t} className="mb-4 last:mb-0">
+              <div className="flex items-baseline justify-between text-sm"><span className="font-medium">{t === "classico" ? "Clássico" : "Premium"}</span><span>{formatBRL(x.revenue)} <span className="text-xs text-muted">· {share(x.revenue, typeTotal)}</span></span></div>
+              <div className="mt-1.5 h-3 overflow-hidden rounded bg-ink/[0.06]"><div className="h-full rounded" style={{ width: `${(x.revenue / typeTotal) * 100}%`, background: t === "classico" ? "#257de0" : "#f47230" }} /></div>
+              <p className="mt-1 text-xs text-muted">{x.orders} venda(s) · {x.units} un. · tarifas e fretes {formatBRL(x.fees)} · lucro {formatBRL(x.profit)} · margem {pct(x.marginBps)}</p>
+            </div>); })}
+        </Card>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card title="Vendas por dia da semana" sub="Quantidade de vendas válidas"><Columns data={d.byWeekday.map((w) => ({ label: w.label, value: w.orders, sub: formatBRL(w.revenue) }))} valueLabel="venda(s)" /></Card>
+        <Card title="Vendas por horário" sub="Hora da compra (Brasília)"><Columns data={d.byHour.map((h) => ({ label: h.label.replace("h", ""), value: h.orders, sub: formatBRL(h.revenue) }))} valueLabel="venda(s)" /></Card>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card title="Produtos que mais faturam" sub={`${d.productsCount} produto(s) vendidos · kits divididos entre as peças`} action={<Link className="link text-xs" href={qs({ aba: "produtos" })}>Anúncios por produto</Link>}>
+          <ol className="space-y-3" data-top-products>
+            {d.topProducts.map((p, i) => (
+              <li key={p.id} className="flex items-center gap-3">
+                <span className="w-4 text-right text-xs text-muted">{i + 1}</span><Photo src={p.image} alt={p.name} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2"><Link className="truncate text-sm hover:underline" href={qs({ aba: "anuncios", produto: p.id })}>{p.name}</Link><span className="ml-auto whitespace-nowrap text-sm font-medium">{formatBRL(p.revenue)}</span></div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded bg-ink/[0.06]"><div className="h-full rounded" style={{ width: `${(p.revenue / maxTopP) * 100}%`, background: "#257de0" }} /></div>
+                  <p className="mt-0.5 text-xs text-muted">{p.sku} · {p.units} un. · lucro {formatBRL(p.profit)} ({pct(p.marginBps)}){p.costMissing ? " · sem custo em parte" : ""}</p>
+                </div>
+              </li>))}
+            {!d.topProducts.length && <li className="text-sm text-muted">Cadastre os anúncios com os produtos para ver este ranking.</li>}
+          </ol>
+        </Card>
+        <Card title="Anúncios que mais faturam" sub={`${d.listingsCount} anúncio(s) com venda no período`} action={<Link className="link text-xs" href={qs({ aba: "lucro" })}>Lucro por anúncio</Link>}>
+          <ol className="space-y-3" data-top-listings>
+            {d.topListings.map((l, i) => (
+              <li key={l.id} className="flex items-center gap-3">
+                <span className="w-4 text-right text-xs text-muted">{i + 1}</span>
+                <div className="relative shrink-0" style={{ width: 44 + Math.max(0, Math.min(l.images.length, 2) - 1) * 12, height: 44 }}>
+                  {(l.images.length ? l.images.slice(0, 2) : [null]).map((src, j) => <div key={j} className="absolute top-0" style={{ left: j * 12, zIndex: 5 - j }}><Photo src={src} alt={l.title} /></div>)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2"><span className="truncate text-sm" title={l.title}>{l.title}</span><span className="ml-auto whitespace-nowrap text-sm font-medium">{formatBRL(l.revenue)}</span></div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded bg-ink/[0.06]"><div className="h-full rounded" style={{ width: `${(l.revenue / maxTopL) * 100}%`, background: "#257de0" }} /></div>
+                  <p className="mt-0.5 text-xs text-muted">{l.mlb}{l.type ? ` · ${l.type === "premium" ? "Premium" : "Clássico"}` : ""} · {l.units} un. · lucro {formatBRL(l.profit)} ({pct(l.marginBps)}){l.id.startsWith("sem:") ? " · anúncio não cadastrado" : ""}</p>
+                </div>
+              </li>))}
+          </ol>
+        </Card>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.3fr)]">
+        <Card title="Situação das vendas" sub="Todas as vendas do período">
+          <ul className="space-y-2.5 text-sm">
+            {d.stages.map((s) => (
+              <li key={s.stage}>
+                <div className="flex justify-between"><span>{s.label}</span><span className="font-medium">{s.orders}</span></div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded bg-ink/[0.06]"><div className="h-full rounded" style={{ width: `${(s.orders / stageMax) * 100}%`, background: toneBar[s.tone] }} /></div>
+              </li>))}
+          </ul>
+        </Card>
+        <Card title="Margem baixa" sub="Anúncios com margem abaixo de 10% no período">
+          {d.lowMargin.length ? <ul className="space-y-2 text-sm">{d.lowMargin.map((l) => <li key={l.id} className="flex items-center gap-2"><Photo src={l.images[0] ?? null} alt={l.title} size={32} /><span className="min-w-0 flex-1 truncate" title={l.title}>{l.title}</span><span className={`whitespace-nowrap font-medium ${(l.marginBps ?? 0) < 0 ? "text-danger" : "text-warning"}`}>{pct(l.marginBps)}</span></li>)}</ul> : <p className="text-sm text-muted">Nenhum anúncio com margem abaixo de 10%.</p>}
+        </Card>
+        <Card title="Últimas vendas" action={<Link className="link text-xs" href={qs({ aba: "vendas" })}>Ver todas</Link>}>
+          <ul className="divide-y divide-line text-sm">
+            {d.recent.map((r) => (
+              <li key={r.orderId} className={`flex items-center gap-3 py-2 ${r.cancelled ? "text-muted" : ""}`}>
+                <Photo src={r.image} alt="" size={36} />
+                <div className="min-w-0 flex-1"><p className="truncate" title={r.title}>{r.title}</p><p className="text-xs text-muted">{new Date(r.saleDate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · {r.stageLabel}</p></div>
+                <div className="text-right"><p className="whitespace-nowrap font-medium">{formatBRL(r.product)}</p>{!r.cancelled && <p className={`text-xs ${r.profit < 0 ? "text-danger" : "text-muted"}`}>lucro {formatBRL(r.profit)}</p>}</div>
+              </li>))}
+          </ul>
+        </Card>
+      </div>
+      <p className="text-xs text-muted">Faturamento = receita de produtos das vendas válidas (sem canceladas/devolvidas). Lucro = faturamento + frete recebido − reembolsos − tarifas e fretes do Mercado Livre − custo dos produtos − imposto, embalagem e outros custos do anúncio. Comparação com {br(d.prevDe)} a {br(d.prevAte)}.</p>
+    </div>
+  );
+}

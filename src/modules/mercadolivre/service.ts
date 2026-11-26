@@ -187,7 +187,7 @@ export async function markShipped(actorId: string, orderIds: string[], shipped: 
 
 // ====================================================================== consultas
 export const mlFilterSchema = z.object({
-  aba: z.enum(["vendas", "enviar", "anuncios", "produtos", "lucro"]).optional().catch(undefined),
+  aba: z.enum(["painel", "vendas", "enviar", "anuncios", "produtos", "lucro"]).optional().catch(undefined),
   produto: z.string().max(40).optional().catch(undefined), // anúncios de um produto (variantId) ou "sem" (sem produto ligado)
   tipo: z.enum(["classico", "premium", ""]).optional().catch(undefined),
   de: z.string().optional().refine((v) => !v || isIsoDay(v)).catch(undefined),
@@ -201,9 +201,9 @@ export type MlFilter = z.infer<typeof mlFilterSchema>;
 
 const monthStart = () => { const t = spDay(new Date()); return `${t.slice(0, 8)}01`; };
 export const mlPeriod = (f: MlFilter) => ({ de: f.de ?? monthStart(), ate: f.ate ?? spDay(new Date()) });
-const range = (de: string, ate: string) => ({ gte: new Date(`${de}T00:00:00-03:00`), lt: new Date(new Date(`${ate}T00:00:00-03:00`).getTime() + 86_400_000) });
+export const range = (de: string, ate: string) => ({ gte: new Date(`${de}T00:00:00-03:00`), lt: new Date(new Date(`${ate}T00:00:00-03:00`).getTime() + 86_400_000) });
 
-async function ordersIn(where: Prisma.MlOrderItemWhereInput) {
+export async function ordersIn(where: Prisma.MlOrderItemWhereInput) {
   const items = await db.mlOrderItem.findMany({
     where, orderBy: [{ saleDate: "desc" }, { orderId: "asc" }, { position: "asc" }], take: 20000,
     include: { listing: { select: { id: true, title: true, mlItemId: true, variation: true, saleFeeBps: true, fixedFeeCents: true, shippingCostCents: true, packagingCents: true, taxBps: true, otherCostCents: true, components: { select: { variantId: true, quantity: true } } } } },
