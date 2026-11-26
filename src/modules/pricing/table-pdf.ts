@@ -1,5 +1,6 @@
 import "server-only";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
+import sharp from "sharp";
 import { formatBRL } from "@/lib/money";
 
 export type PdfRow = { code: string | null; name: string; category: string; description: string | null; image: string | null; costCents: number | null; profileName: string | null; markupText: string | null; calcCents: number | null; minCents: number | null; marginBps: number | null; sitePriceCents: number | null; stateLabel: string };
@@ -46,9 +47,9 @@ export async function buildPriceTablePdf(rows: PdfRow[], o: PdfOptions) {
 
   // caracteres fora da codificação da fonte padrão são trocados (o PDF não aceita qualquer Unicode)
   const okCache = new Map<string, boolean>();
-  const safe = (t: string, f: PDFFont) => [...t.replace(/[−‐‑]/g, "-").replace(/[  ]/g, " ").replace(/[“”]/g, '"').replace(/[‘’]/g, "'")].map((ch) => {
+  const safe = (t: string, f: PDFFont) => [...t.normalize("NFC").replace(/[\r\n\t\u2028\u2029\u0085]+/g, " ").replace(/[\u200b-\u200d\ufeff\u00ad]/g, "").replace(/[−‐‑]/g, "-").replace(/[  ]/g, " ").replace(/[“”]/g, '"').replace(/[‘’]/g, "'")].map((ch) => {
     const k = ch; if (!okCache.has(k)) { try { f.encodeText(ch); okCache.set(k, true); } catch { okCache.set(k, false); } }
-    return okCache.get(k) ? ch : "?";
+    return okCache.get(k) ? ch : " ";
   }).join("");
   const wrap = (text: string, f: PDFFont, size: number, width: number, maxLines = 99) => {
     const words = safe(text, f).replace(/\s+/g, " ").trim().split(" ").filter(Boolean); const lines: string[] = []; let cur = "";
@@ -69,8 +70,9 @@ export async function buildPriceTablePdf(rows: PdfRow[], o: PdfOptions) {
     await Promise.all([...new Set(rows.map((r) => r.image).filter(Boolean) as string[])].map(async (url) => {
       try {
         const bytes = await o.fetchImage!(url); if (!bytes) { images.set(url, null); return; }
-        const isPng = bytes[0] === 0x89 && bytes[1] === 0x50, isJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
-        images.set(url, isPng ? await doc.embedPng(bytes) : isJpg ? await doc.embedJpg(bytes) : null);
+        // qualquer formato (JPG, PNG, WebP, AVIF) vira uma miniatura JPG com fundo branco: o PDF só aceita JPG/PNG e fica mais leve
+        const thumb = await sharp(bytes).rotate().resize(240, 240, { fit: "inside", withoutEnlargement: true }).flatten({ background: "#ffffff" }).jpeg({ quality: 82 }).toBuffer();
+        images.set(url, await doc.embedJpg(thumb));
       } catch { images.set(url, null); }
     }));
   }
