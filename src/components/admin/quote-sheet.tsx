@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClientOption, QuoteProductOption } from "@/modules/quotes/service";
 import { PAY_METHODS, STATUS_LABEL, installmentError, validUntil } from "@/modules/quotes/totals";
 import { EMPTY_CLIENT, emptyItem, sheetInstallments, sheetTotals, toMoneyIn, type ClientData, type CommercialData, type CompanyHeader, type SheetData, type SheetItem } from "@/modules/quotes/sheet";
@@ -56,6 +56,55 @@ function Field({ label, value, onEdit, area, edit }: { label: string; value: str
  * Folha do orçamento no padrão do modelo da empresa.
  * edit=true: campos editáveis; edit=false: documento para impressão (A4).
  */
+const onlyDigits = (t: string) => t.replace(/\D/g, "");
+const fold = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/** Escolha do cliente: lista completa ao abrir e busca por nome, nome fantasia, código, CNPJ ou CPF. */
+function ClientPicker({ clients, value, onPick }: { clients: ClientOption[]; value: string; onPick: (c: ClientOption | null) => void }) {
+  const current = clients.find((c) => c.key === value) ?? null;
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [hi, setHi] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => { const h = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
+  const list = useMemo(() => {
+    const t = fold(q.trim()), d = onlyDigits(q);
+    if (!t) return clients.slice(0, 200);
+    return clients.filter((c) => fold(`${c.name} ${c.tradeName} ${c.code}`).includes(t) || (d.length >= 2 && (onlyDigits(c.cnpj).includes(d) || onlyDigits(c.cpf).includes(d) || c.code.includes(d)))).slice(0, 200);
+  }, [clients, q]);
+  useEffect(() => setHi(0), [q]);
+  const pick = (c: ClientOption | null) => { onPick(c); setOpen(false); setQ(""); };
+  const doc = (c: ClientOption) => (c.cnpj ? formatCnpj(c.cnpj) : c.cpf || "");
+  return (
+    <div ref={box} className="relative w-full max-w-md" data-client-picker>
+      <input className="qs-sel w-full" role="combobox" aria-expanded={open} aria-label="Buscar cliente cadastrado por nome, código ou CNPJ"
+        placeholder={current ? `${current.code ? `${current.code} · ` : ""}${current.name}` : "— cliente avulso — buscar por nome, código ou CNPJ"}
+        value={q} onFocus={() => setOpen(true)} onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setHi((h) => Math.min(h + 1, list.length - 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+          else if (e.key === "Enter") { e.preventDefault(); if (open && list[hi]) pick(list[hi]); }
+          else if (e.key === "Escape") { setOpen(false); setQ(""); }
+        }} />
+      {open && (
+        <ul role="listbox" className="absolute left-0 right-0 z-30 mt-1 max-h-72 overflow-auto rounded border border-line bg-white py-1 text-[12.5px] shadow-lg">
+          <li role="option" aria-selected={!value} className="cursor-pointer px-3 py-1.5 text-muted hover:bg-ink/5" onMouseDown={(e) => { e.preventDefault(); pick(null); }}>— cliente avulso —</li>
+          {list.map((c, i) => (
+            <li key={c.key} role="option" aria-selected={c.key === value} data-client-option={c.code || c.name}
+              className={`cursor-pointer px-3 py-1.5 ${i === hi ? "bg-ink/[0.06]" : ""} ${c.key === value ? "font-medium" : ""}`}
+              onMouseEnter={() => setHi(i)} onMouseDown={(e) => { e.preventDefault(); pick(c); }}>
+              <div className="flex gap-2">{c.code && <span className="font-mono text-[11px] text-muted">{c.code}</span>}<span className="truncate">{c.name}</span>{c.kind === "company" && <span className="text-[11px] text-muted">(conta no site)</span>}</div>
+              {(c.tradeName || doc(c) || c.city) && <div className="truncate text-[11px] text-muted">{[c.tradeName, doc(c), c.city].filter(Boolean).join(" · ")}</div>}
+            </li>
+          ))}
+          {!list.length && <li className="px-3 py-2 text-muted">Nenhum cliente encontrado para “{q}”.</li>}
+          {!q && clients.length > 200 && <li className="px-3 py-1.5 text-[11px] text-muted">Mostrando 200 de {clients.length}. Digite para buscar.</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function QuoteSheet({ data, onChange, edit, company, products = [], clients = [], onUpload }: {
   data: SheetData; onChange?: (d: SheetData) => void; edit: boolean; company: CompanyHeader;
   products?: QuoteProductOption[]; clients?: ClientOption[]; onUpload?: (file: File) => Promise<string | null>;
@@ -103,10 +152,8 @@ export function QuoteSheet({ data, onChange, edit, company, products = [], clien
       {edit && (
         <div className="qs-toolbar">
           <span className="qs-mini">Cliente cadastrado:</span>
-          <select className="qs-sel max-w-72" value={data.companyId ? `co:${data.companyId}` : data.clientId ? `cl:${data.clientId}` : ""} aria-label="Cliente cadastrado"
-            onChange={(e) => { const c = clients.find((x) => x.key === e.target.value); if (!c) return set({ companyId: "", clientId: "" }); const { key: _k, kind, id, ...fields } = c; void _k; set({ companyId: kind === "company" ? id : "", clientId: kind === "client" ? id : "", client: { ...EMPTY_CLIENT, ...fields, cnpj: fields.cnpj ? formatCnpj(fields.cnpj) : "" } }); }}>
-            <option value="">— cliente avulso —</option>{clients.map((c) => <option key={c.key} value={c.key}>{c.name}{c.kind === "company" ? " (conta no site)" : ""}</option>)}
-          </select>
+          <ClientPicker clients={clients} value={data.companyId ? `co:${data.companyId}` : data.clientId ? `cl:${data.clientId}` : ""}
+            onPick={(c) => { if (!c) return set({ companyId: "", clientId: "" }); const { key: _k, kind, id, code: _c, tradeName: _t, ...fields } = c; void _k; void _c; void _t; set({ companyId: kind === "company" ? id : "", clientId: kind === "client" ? id : "", client: { ...EMPTY_CLIENT, ...fields, cnpj: fields.cnpj ? formatCnpj(fields.cnpj) : "" } }); }} />
           {(data.companyId || data.clientId) && <button type="button" className="text-[11.5px] underline underline-offset-2" onClick={() => set({ companyId: "", clientId: "" })}>Desvincular</button>}
         </div>
       )}

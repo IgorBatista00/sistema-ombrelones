@@ -103,7 +103,7 @@ async function ClientRegistry({ sp, tabs }: { sp: SP; tabs: React.ReactNode }) {
         action={<div className="flex flex-wrap gap-2"><ImportClientsButton /></div>} />
       {tabs}
       <form className="mb-5 flex flex-wrap gap-3" role="search">
-        <Input name="q" defaultValue={sp.q} placeholder="Nome, fantasia, contato, e-mail, cidade, CNPJ ou CPF" className="h-10 max-w-md" aria-label="Buscar cliente" />
+        <Input name="q" defaultValue={sp.q} placeholder="Código, nome, fantasia, contato, e-mail, cidade, CNPJ ou CPF" className="h-10 max-w-md" aria-label="Buscar cliente" />
         <Button type="submit" className="h-10">Buscar</Button>
         {sp.q && <Link href="/admin/clientes" className="inline-flex h-10 items-center px-3 text-sm text-muted hover:text-ink">Limpar</Link>}
       </form>
@@ -115,10 +115,11 @@ async function ClientRegistry({ sp, tabs }: { sp: SP; tabs: React.ReactNode }) {
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Cliente", "CNPJ / CPF", "Contato", "Cidade", "Orçamentos", ""].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3 font-normal">{h}</th>)}</tr></thead>
+            <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Código", "Cliente", "CNPJ / CPF", "Contato", "Cidade", "Orçamentos", ""].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3 font-normal">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-line">
               {v.rows.map((c) => (
                 <tr key={c.id} data-client={c.name}>
+                  <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs">{c.code ?? "—"}</td>
                   <td className="max-w-80 px-4 py-2.5"><span className="font-medium">{c.name}</span>{c.tradeName && <span className="text-muted"> · {c.tradeName}</span>}
                     <div className="mt-0.5 flex flex-wrap gap-1"><Badge tone="neutral">{c.personType}</Badge>{c.hasSiteAccount && <Badge tone="success">Tem conta no site</Badge>}</div></td>
                   <td className="whitespace-nowrap px-4 py-2.5">{c.cnpj ? formatCnpj(c.cnpj) : c.cpf ? formatCpf(c.cpf) : <span className="text-muted">—</span>}{c.stateRegistration && <div className="text-xs text-muted">IE {c.stateRegistration}</div>}</td>

@@ -2,6 +2,7 @@
 import { isValidCnpj, normalizeCnpj } from "@/modules/companies/cnpj";
 
 export const CLIENT_COLUMNS = [
+  ["codigo", "Código do cliente. Em branco: o sistema numera automaticamente (00001, 00002…)"],
   ["tipo", "PJ (empresa) ou PF (pessoa física). Em branco: o sistema deduz pelo CNPJ/CPF"],
   ["nome", "OBRIGATÓRIO. Razão social (PJ) ou nome completo (PF)"],
   ["nome_fantasia", "Nome fantasia (PJ)"],
@@ -24,7 +25,7 @@ export const CLIENT_COLUMNS = [
 export type ClientCol = (typeof CLIENT_COLUMNS)[number][0];
 export const CLIENT_COLS = new Set<string>(CLIENT_COLUMNS.map(([c]) => c));
 export const CLIENT_ALIASES: Record<string, ClientCol> = {
-  razao_social: "nome", nome_completo: "nome", cliente: "nome", fantasia: "nome_fantasia", e_mail: "email", whatsapp: "celular", fone: "telefone",
+  codigo_cliente: "codigo", cod: "codigo", cod_cliente: "codigo", codigo_do_cliente: "codigo", razao_social: "nome", nome_completo: "nome", cliente: "nome", fantasia: "nome_fantasia", e_mail: "email", whatsapp: "celular", fone: "telefone",
   ie: "inscricao_estadual", inscricao: "inscricao_estadual", estado: "uf", logradouro: "endereco", rua: "endereco", entrega: "endereco_entrega",
   data_de_aniversario: "aniversario", obs: "observacoes", observacao: "observacoes", tipo_de_cliente: "tipo", pessoa: "tipo", cnpj_cpf: "cnpj",
 };
@@ -54,7 +55,7 @@ export function parseBirthday(raw: string) {
 }
 
 export type ParsedClient = {
-  personType: "PJ" | "PF"; name: string; tradeName: string | null; cnpj: string | null; cpf: string | null; stateRegistration: string | null;
+  code: string | null; personType: "PJ" | "PF"; name: string; tradeName: string | null; cnpj: string | null; cpf: string | null; stateRegistration: string | null;
   contactName: string | null; mobile: string | null; phone: string | null; email: string | null; street: string | null; district: string | null;
   city: string | null; state: string | null; zipCode: string | null; deliveryAddress: string | null; birthday: string | null; notes: string | null;
 };
@@ -90,6 +91,8 @@ export function parseClientRow(r: RawClientRow): { data: ParsedClient | null; er
   if (personType === "PF" && cnpj && !cpf) warnings.push("Pessoa física com CNPJ — confira o tipo.");
   if (!rawCnpj && !rawCpf) warnings.push("Sem CNPJ/CPF: será sempre cadastrado como cliente novo (pode duplicar em uma nova importação).");
 
+  const code = opt("codigo", 30);
+  if (code && !/^[\w.\-/]+$/.test(code)) errors.push(`Código inválido (${code}) — use letras, números, ponto, traço ou barra, sem espaços.`);
   const email = opt("email", 160)?.toLowerCase() ?? null;
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push(`E-mail inválido (${email}).`);
   const uf = opt("uf", 2)?.toUpperCase() ?? null;
@@ -104,7 +107,7 @@ export function parseClientRow(r: RawClientRow): { data: ParsedClient | null; er
 
   if (errors.length) return { data: null, errors, warnings, example };
   return { errors, warnings, example, data: {
-    personType, name: name.slice(0, 200), tradeName: opt("nome_fantasia"), cnpj, cpf, stateRegistration: opt("inscricao_estadual", 30),
+    code, personType, name: name.slice(0, 200), tradeName: opt("nome_fantasia"), cnpj, cpf, stateRegistration: opt("inscricao_estadual", 30),
     contactName: opt("contato", 120), mobile, phone, email, street: opt("endereco", 200), district: opt("bairro", 120), city: opt("cidade", 120),
     state: uf, zipCode: cep, deliveryAddress: opt("endereco_entrega", 300), birthday, notes: opt("observacoes", 2000),
   } };
@@ -112,3 +115,9 @@ export function parseClientRow(r: RawClientRow): { data: ParsedClient | null; er
 
 /** Chave de duplicidade: CNPJ ou CPF. */
 export const clientKey = (c: Pick<ParsedClient, "cnpj" | "cpf">) => (c.cnpj ? `cnpj:${c.cnpj}` : c.cpf ? `cpf:${c.cpf}` : null);
+
+/** Próximo código automático: maior código numérico + 1, com 5 dígitos (00001). */
+export function nextClientCode(existing: (string | null)[]) {
+  const max = existing.reduce((m, c) => (c && /^\d+$/.test(c) ? Math.max(m, Number(c)) : m), 0);
+  return String(max + 1).padStart(5, "0");
+}

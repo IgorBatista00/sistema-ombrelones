@@ -191,13 +191,13 @@ export async function clientOptions() {
   const companies = await db.company.findMany({ where: { status: { not: "BLOCKED" } }, orderBy: { legalName: "asc" }, take: 500, include: { members: { take: 1, include: { user: { select: { name: true, email: true, phone: true } } } }, addresses: { orderBy: { isDefault: "desc" }, take: 1 } } });
   const fromCompanies = companies.map((c) => {
     const a = c.addresses[0];
-    return { key: `co:${c.id}`, kind: "company" as const, id: c.id, name: c.legalName, cpf: "", cnpj: c.cnpj, ie: c.stateRegistration ?? "", address: a ? `${a.street}, ${a.number}${a.complement ? ` – ${a.complement}` : ""} · ${a.district}` : "",
+    return { key: `co:${c.id}`, kind: "company" as const, id: c.id, code: "", tradeName: c.tradeName ?? "", name: c.legalName, cpf: "", cnpj: c.cnpj, ie: c.stateRegistration ?? "", address: a ? `${a.street}, ${a.number}${a.complement ? ` – ${a.complement}` : ""} · ${a.district}` : "",
       city: a ? `${a.city} - ${a.state}` : "", cep: a ? a.zipCode.replace(/(\d{5})(\d{3})/, "$1-$2") : "", contact: c.members[0]?.user.name ?? "", mobile: fmtPhone(c.members[0]?.user.phone ?? ""),
       email: c.members[0]?.user.email ?? "", site: "", birthday: "", delivery: "" };
   });
   // + cadastro comercial (importado por planilha) — PF ou PJ, sem conta no site
-  const registry = await db.client.findMany({ orderBy: { name: "asc" }, take: 3000 });
-  const fromRegistry = registry.map((c) => ({ key: `cl:${c.id}`, kind: "client" as const, id: c.id, ...clientToQuoteFields(c) }));
+  const registry = await db.client.findMany({ orderBy: { name: "asc" }, take: 5000 });
+  const fromRegistry = registry.map((c) => ({ key: `cl:${c.id}`, kind: "client" as const, id: c.id, code: c.code ?? "", tradeName: c.tradeName ?? "", ...clientToQuoteFields(c) }));
   return [...fromRegistry, ...fromCompanies].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 export type ClientOption = Awaited<ReturnType<typeof clientOptions>>[number];

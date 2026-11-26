@@ -2,7 +2,7 @@ import type { ClientOption } from "./service";
 import { installmentPlan, quoteTotals, type STATUS_LABEL } from "./totals";
 
 // ------------------------------------------------------------------ tipos
-export type ClientData = Omit<ClientOption, "id" | "key" | "kind">;
+export type ClientData = Omit<ClientOption, "id" | "key" | "kind" | "code" | "tradeName">;
 export interface CommercialData { professional: string; seller: string; manager: string; mobile: string; email: string }
 export interface SheetItem {
   id?: string; variantId: string; imageUrl: string | null; name: string; fabricLine: string; paint: string; measures: string; finish: string; cordage: string; itemNotes: string;

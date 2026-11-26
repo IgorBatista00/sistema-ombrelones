@@ -1375,6 +1375,7 @@ enum PersonType {
 
 model Client {
   id                String     @id @default(cuid())
+  code              String?    @unique // código do cliente (automático, sequencial; pode vir da planilha)
   personType        PersonType @default(PJ)
   name              String // razão social ou nome completo
   tradeName         String? // nome fantasia

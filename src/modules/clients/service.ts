@@ -5,11 +5,11 @@ import { db } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { readMatrix } from "@/modules/products/excel";
 import { formatCnpj } from "@/modules/companies/cnpj";
-import { CLIENT_ALIASES, CLIENT_COLS, CLIENT_COLUMNS, clientKey, formatCep, formatCpf, parseClientRow, UFS, type ClientCol, type ParsedClient, type RawClientRow } from "./rules";
+import { CLIENT_ALIASES, CLIENT_COLS, CLIENT_COLUMNS, clientKey, formatCep, formatCpf, nextClientCode, parseClientRow, UFS, type ClientCol, type ParsedClient, type RawClientRow } from "./rules";
 
 const MAX_ROWS = 3000;
 const norm = (h: string) => h.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-const TEXT_COLS = new Set<ClientCol>(["cnpj", "cpf", "cep", "celular", "telefone", "inscricao_estadual", "aniversario"]);
+const TEXT_COLS = new Set<ClientCol>(["codigo", "cnpj", "cpf", "cep", "celular", "telefone", "inscricao_estadual", "aniversario"]);
 
 /** Modelo .xlsx: cabeçalho com notas, colunas de documento como texto (não perdem o zero), listas de tipo/UF, 2 exemplos e instruções. */
 export async function buildClientTemplate() {
@@ -71,6 +71,9 @@ async function plan(rows: RawClientRow[]): Promise<Planned[]> {
   const parsed = rows.map((r) => ({ r, p: parseClientRow(r) }));
   const cnpjs = parsed.map((x) => x.p.data?.cnpj).filter(Boolean) as string[], cpfs = parsed.map((x) => x.p.data?.cpf).filter(Boolean) as string[];
   const existing = await db.client.findMany({ where: { OR: [{ cnpj: { in: cnpjs } }, { cpf: { in: cpfs } }] }, select: { id: true, cnpj: true, cpf: true } });
+  const codes = parsed.map((x) => x.p.data?.code).filter(Boolean) as string[];
+  const codeOwners = new Map((await db.client.findMany({ where: { code: { in: codes } }, select: { id: true, code: true, name: true } })).map((c) => [c.code!, c]));
+  const seenCode = new Map<string, number>();
   const byKey = new Map(existing.flatMap((e) => [e.cnpj && [`cnpj:${e.cnpj}`, e.id], e.cpf && [`cpf:${e.cpf}`, e.id]].filter(Boolean) as [string, string][]));
   const seen = new Map<string, number>();
   return parsed.map(({ r, p }) => {
@@ -79,6 +82,12 @@ async function plan(rows: RawClientRow[]): Promise<Planned[]> {
     if (key && seen.has(key)) errors.push(`Mesmo ${key.startsWith("cnpj") ? "CNPJ" : "CPF"} da linha ${seen.get(key)} — deixe uma linha por cliente.`);
     if (key && !seen.has(key)) seen.set(key, r.__line);
     const existingId = key ? byKey.get(key) ?? null : null;
+    const code = p.data?.code;
+    if (code) {
+      const owner = codeOwners.get(code);
+      if (owner && owner.id !== existingId) errors.push(`O código ${code} já é do cliente "${owner.name}".`);
+      if (seenCode.has(code)) errors.push(`Mesmo código da linha ${seenCode.get(code)}.`); else seenCode.set(code, r.__line);
+    }
     const ok = p.data && !errors.length;
     const doc = p.data?.cnpj ? formatCnpj(p.data.cnpj) : p.data?.cpf ? formatCpf(p.data.cpf) : (r.cnpj || r.cpf || "");
     return { line: r.__line, name: p.data?.name ?? (r.nome ?? ""), doc, action: ok ? (existingId ? "atualizar" : "criar") : "ignorar", errors, warnings, data: ok ? p.data : null, existingId };
@@ -97,13 +106,16 @@ export async function commitClientImport(actorId: string, rows: RawClientRow[]) 
   if (!todo.length) throw new AppError("NOTHING", "Nenhuma linha válida para importar. Corrija os erros da prévia.", 422);
   let created = 0, updated = 0;
   await db.$transaction(async (tx) => {
+    const used = (await tx.client.findMany({ where: { code: { not: null } }, select: { code: true } })).map((c) => c.code);
+    for (const p of todo) if (p.data!.code) used.push(p.data!.code);
     for (const p of todo) {
       const d = p.data!;
       if (p.existingId) {
         const patch = Object.fromEntries(Object.entries(d).filter(([, v]) => v != null && v !== "")) as Prisma.ClientUpdateInput;
         await tx.client.update({ where: { id: p.existingId }, data: patch }); updated++;
       } else {
-        await tx.client.create({ data: { ...d, source: "IMPORT", createdById: actorId } }); created++;
+        const code = d.code ?? nextClientCode(used); used.push(code);
+        await tx.client.create({ data: { ...d, code, source: "IMPORT", createdById: actorId } }); created++;
       }
     }
     await tx.auditLog.create({ data: { actorId, action: "client.import", entity: "Client", entityId: "import", after: { created, updated, ignored: planned.length - todo.length } } });
@@ -114,7 +126,7 @@ export async function commitClientImport(actorId: string, rows: RawClientRow[]) 
 export async function clientsView(q?: string, page = 1) {
   const t = q?.trim(); const d = t?.replace(/\D/g, "");
   const where: Prisma.ClientWhereInput = t ? { OR: [
-    { name: { contains: t, mode: "insensitive" } }, { tradeName: { contains: t, mode: "insensitive" } }, { contactName: { contains: t, mode: "insensitive" } },
+    { code: { contains: t, mode: "insensitive" } }, { name: { contains: t, mode: "insensitive" } }, { tradeName: { contains: t, mode: "insensitive" } }, { contactName: { contains: t, mode: "insensitive" } },
     { email: { contains: t, mode: "insensitive" } }, { city: { contains: t, mode: "insensitive" } },
     ...(d && d.length >= 3 ? [{ cnpj: { contains: d } }, { cpf: { contains: d } }] : []),
   ] } : {};
