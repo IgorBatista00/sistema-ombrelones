@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
 import { MlSheetImportButton } from "@/components/admin/ml-sheet-import";
+import { MlListingImportButton } from "@/components/admin/ml-listing-import";
 import { ApplyStockButton, DeleteListingButton, ListingButton, ShipButton, ShipQueueSelect, StockFromForm } from "@/components/admin/ml";
 import { emptyListing, listingInitFrom } from "@/modules/mercadolivre/listing-form";
 import { listingFormOptions, mlFilterSchema, mlListingsView, mlPeriod, mlProfitByListing, mlSalesView, mlShippingQueue } from "@/modules/mercadolivre/service";
@@ -141,7 +142,7 @@ async function Listings({ f, period, variants, can }: { f: Parameters<typeof mlL
     <>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <p className="max-w-2xl text-sm text-muted">Cadastre cada anúncio com os produtos que ele vende (inclusive kits) e os custos de venda. As vendas são ligadas sozinhas pelo nº do anúncio (MLB), pela variação ou pelo SKU.</p>
-        <ListingButton label="Cadastrar anúncio" initial={emptyListing()} variants={variants} />
+        <div className="flex flex-wrap gap-2"><MlListingImportButton /><ListingButton label="Cadastrar anúncio" initial={emptyListing()} variants={variants} /></div>
       </div>
       {can.stock && (
         <div className="card mb-5 p-4 text-sm">

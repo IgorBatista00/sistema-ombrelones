@@ -85,12 +85,16 @@ export const normVariation = (v: string | null | undefined) => n(v ?? "").replac
 export function matchListing(listings: ListingKey[], item: { itemId: string | null; variation: string | null; sku: string | null }) {
   const id = (item.itemId ?? "").toUpperCase(), v = normVariation(item.variation);
   if (id) {
-    const exact = listings.find((l) => l.mlItemId === id && normVariation(l.variation) === v && v);
+    const same = listings.filter((l) => l.mlItemId === id);
+    const exact = same.find((l) => normVariation(l.variation) === v && v);
     if (exact) return exact.id;
-    const general = listings.find((l) => l.mlItemId === id && !l.variation);
+    // "Cor: Branco" na venda × "Branco" no anúncio (a planilha de anúncios traz só o valor da variação)
+    const values = (x: string) => x.split(/\s*[,;|]\s*/).map((p) => p.replace(/^[^:]*:\s*/, "").trim()).filter(Boolean).join(" | ");
+    const byValue = v ? same.filter((l) => l.variation && values(normVariation(l.variation)) === values(v)) : [];
+    if (byValue.length === 1) return byValue[0].id;
+    const general = same.find((l) => !l.variation);
     if (general) return general.id;
-    const onlyOne = listings.filter((l) => l.mlItemId === id);
-    if (onlyOne.length === 1 && !v) return onlyOne[0].id;
+    if (same.length === 1) return same[0].id; // anúncio com uma variação só: qualquer venda do MLB é dele
   }
   if (item.sku) { const s = listings.find((l) => l.sku && l.sku.toUpperCase() === item.sku!.toUpperCase()); if (s) return s.id; }
   return null;

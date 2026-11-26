@@ -158,7 +158,8 @@ function parseCsv(text: string): string[][] {
 }
 
 /** Lê a 1ª aba de um .xlsx ou um .csv como matriz de textos (reaproveitado por outras importações). */
-export async function readMatrix(buf: Buffer, filename: string): Promise<string[][]> {
+/** pick: escolhe a aba (ex.: a planilha do Mercado Livre tem abas ocultas antes de “Anúncios”). Sem pick, usa a primeira. */
+export async function readMatrix(buf: Buffer, filename: string, pick?: (matrix: string[][], name: string) => boolean): Promise<string[][]> {
   let matrix: string[][];
   if (/\.csv$/i.test(filename)) {
     matrix = parseCsv(buf.toString("utf8").replace(/^﻿/, ""));
@@ -167,10 +168,10 @@ export async function readMatrix(buf: Buffer, filename: string): Promise<string[
     let ok = true;
     try { await wb.xlsx.load(buf as unknown as ArrayBuffer); } catch { ok = false; }
     if (ok) {
-      const ws = wb.worksheets[0];
-      if (!ws) throw new AppError("BAD_FILE", "A planilha está vazia.");
-      matrix = [];
-      ws.eachRow({ includeEmpty: true }, (r, n) => { const vals = (r.values as ExcelJS.CellValue[]).slice(1); matrix[n - 1] = vals.map(cellText); });
+      const toMatrix = (ws: ExcelJS.Worksheet) => { const m: string[][] = []; ws.eachRow({ includeEmpty: true }, (r, n) => { const vals = (r.values as ExcelJS.CellValue[]).slice(1); m[n - 1] = vals.map(cellText); }); return m; };
+      if (!wb.worksheets[0]) throw new AppError("BAD_FILE", "A planilha está vazia.");
+      const chosen = pick ? wb.worksheets.map((ws) => ({ ws, m: toMatrix(ws) })).find(({ ws, m }) => pick(m, ws.name)) : null;
+      matrix = chosen ? chosen.m : toMatrix(wb.worksheets[0]);
     } else {
       // reserva: alguns programas gravam comentários que o ExcelJS não abre — lê só os valores direto do arquivo
       try { matrix = await readXlsxLite(buf); } catch { throw new AppError("BAD_FILE", "Não foi possível ler a planilha. Salve como .xlsx ou .csv."); }
