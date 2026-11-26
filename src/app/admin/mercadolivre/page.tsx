@@ -9,7 +9,7 @@ import { MlSheetImportButton } from "@/components/admin/ml-sheet-import";
 import { MlListingImportButton } from "@/components/admin/ml-listing-import";
 import { ApplyStockButton, DeleteListingButton, ListingButton, ShipButton, ShipQueueSelect, StockFromForm } from "@/components/admin/ml";
 import { emptyListing, listingInitFrom } from "@/modules/mercadolivre/listing-form";
-import { listingFormOptions, mlFilterSchema, mlListingsView, mlPeriod, mlProfitByListing, mlSalesView, mlShippingQueue } from "@/modules/mercadolivre/service";
+import { listingFormOptions, mlFilterSchema, mlListingsByProduct, mlListingsView, mlPeriod, mlProfitByListing, mlSalesView, mlShippingQueue } from "@/modules/mercadolivre/service";
 import { SHIP_STAGE, fmtPct } from "@/modules/mercadolivre/rules";
 import { spDay } from "@/modules/purchase-orders/rules";
 
@@ -24,7 +24,7 @@ export default async function MercadoLivrePage({ searchParams }: { searchParams:
   const has = (p: string) => admin.permissions.includes(p as never);
   const can = { profit: has("FINANCE") || has("PRODUCTS"), ship: has("LOGISTICS") || has("ORDERS"), stock: has("STOCK"), imp: has("FINANCE") || has("ORDERS") };
   const f = mlFilterSchema.parse(await searchParams);
-  const tabs = ([["vendas", "Vendas"], ["enviar", "A enviar"], ["anuncios", "Anúncios"], ["lucro", "Lucro por anúncio"]] as const).filter(([k]) => (k === "anuncios" || k === "lucro" ? can.profit : true));
+  const tabs = ([["vendas", "Vendas"], ["enviar", "A enviar"], ["anuncios", "Anúncios"], ["produtos", "Anúncios por produto"], ["lucro", "Lucro por anúncio"]] as const).filter(([k]) => (k === "anuncios" || k === "produtos" || k === "lucro" ? can.profit : true));
   const aba = tabs.some(([k]) => k === f.aba) ? f.aba! : !has("ORDERS") && !has("FINANCE") ? "enviar" : "vendas";
   const { de, ate } = mlPeriod(f);
   const qs = (patch: Record<string, string | undefined>) => { const p = new URLSearchParams(); for (const [k, v] of Object.entries({ ...f, ...patch })) if (v) p.set(k, v); return `/admin/mercadolivre?${p}`; };
@@ -47,11 +47,12 @@ export default async function MercadoLivrePage({ searchParams }: { searchParams:
     <>
       <PageHead title="Mercado Livre" subtitle={can.profit ? "Vendas, expedição, anúncios e lucro. As vendas entram pela planilha exportada do Mercado Livre." : "Vendas e expedição. As vendas entram pela planilha exportada do Mercado Livre."} action={can.imp ? <MlSheetImportButton /> : undefined} />
       <nav className="mb-5 flex gap-1 overflow-x-auto border-b border-line" aria-label="Visão">
-        {tabs.map(([k, l]) => <Link key={k} href={qs({ aba: k, envio: undefined, q: undefined, vinculo: undefined, anuncio: undefined })} aria-current={aba === k ? "page" : undefined} className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm ${aba === k ? "border-ink font-medium" : "border-transparent text-muted hover:text-ink"}`}>{l}</Link>)}
+        {tabs.map(([k, l]) => <Link key={k} href={qs({ aba: k, envio: undefined, q: undefined, vinculo: undefined, anuncio: undefined, produto: undefined, tipo: undefined })} aria-current={aba === k ? "page" : undefined} className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm ${aba === k ? "border-ink font-medium" : "border-transparent text-muted hover:text-ink"}`}>{l}</Link>)}
       </nav>
       {aba === "vendas" && <Sales f={f} period={period} can={can} />}
       {aba === "enviar" && <ToShip can={can} />}
-      {aba === "anuncios" && <Listings f={f} period={period} variants={variants} can={can} />}
+      {aba === "anuncios" && <Listings f={f} period={period} variants={variants} can={can} qs={qs} />}
+      {aba === "produtos" && <ByProduct f={f} period={period} qs={qs} />}
       {aba === "lucro" && <Profit f={f} period={period} />}
     </>
   );
@@ -136,8 +137,26 @@ async function ToShip({ can }: { can: Can }) {
   );
 }
 
-async function Listings({ f, period, variants, can }: { f: Parameters<typeof mlListingsView>[0]; period: React.ReactNode; variants: Awaited<ReturnType<typeof listingFormOptions>>; can: Can }) {
+type Qs = (patch: Record<string, string | undefined>) => string;
+/** Foto(s) do produto ligado ao anúncio (kit: até 3 sobrepostas). */
+function Thumbs({ items, size = 52 }: { items: { image: string | null; name: string }[]; size?: number }) {
+  if (!items.length) return <div className="grid place-items-center rounded border border-dashed border-line text-[10px] text-muted" style={{ width: size, height: size }}>sem produto</div>;
+  const shown = items.slice(0, 3);
+  return (
+    <div className="relative" style={{ width: size + (shown.length - 1) * 14, height: size }} data-thumbs>
+      {shown.map((c, i) => (
+        <div key={i} className="absolute top-0 overflow-hidden rounded border border-line bg-white shadow-sm" style={{ left: i * 14, width: size, height: size, zIndex: 10 - i }} title={c.name}>
+          {c.image ? <img src={c.image} alt={c.name} className="h-full w-full object-contain p-0.5" loading="lazy" /> : <span className="grid h-full place-items-center text-[9px] text-muted">sem foto</span>}
+        </div>
+      ))}
+      {items.length > 3 && <span className="absolute -bottom-1 -right-1 z-20 rounded bg-ink px-1 text-[10px] text-canvas">+{items.length - 3}</span>}
+    </div>
+  );
+}
+
+async function Listings({ f, period, variants, can, qs }: { f: Parameters<typeof mlListingsView>[0]; period: React.ReactNode; variants: Awaited<ReturnType<typeof listingFormOptions>>; can: Can; qs: Qs }) {
   const v = await mlListingsView(f);
+  const prodName = f.produto && f.produto !== "sem" ? v.listings.flatMap((l) => l.components).find((c) => c.variantId === f.produto) : null;
   return (
     <>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
@@ -153,13 +172,22 @@ async function Listings({ f, period, variants, can }: { f: Parameters<typeof mlL
         </div>
       )}
       {period}
+      <form className="card mb-4 flex flex-wrap items-end gap-3 p-4 text-xs text-muted" role="search" data-listing-filter>
+        <input type="hidden" name="aba" value="anuncios" />{f.de && <input type="hidden" name="de" value={f.de} />}{f.ate && <input type="hidden" name="ate" value={f.ate} />}{f.produto && <input type="hidden" name="produto" value={f.produto} />}
+        <label className="block">Buscar<Input name="q" defaultValue={f.q ?? ""} placeholder="Título, MLB, SKU ou produto" className="mt-1 h-10 w-72" /></label>
+        <label className="block">Tipo<select name="tipo" defaultValue={f.tipo ?? ""} className="mt-1 h-10 rounded border border-line bg-white px-2 text-sm text-ink"><option value="">Todos</option><option value="classico">Clássico</option><option value="premium">Premium</option></select></label>
+        <Button type="submit" variant="secondary" className="h-10">Filtrar</Button>
+        {(f.q || f.tipo || f.produto) && <Link className="link pb-2.5" href={qs({ q: undefined, tipo: undefined, produto: undefined })}>Limpar filtros</Link>}
+        {f.produto && <span className="w-full text-sm text-ink" data-produto-chip>Mostrando os anúncios de: <b className="font-medium">{f.produto === "sem" ? "anúncios sem produto ligado" : prodName ? `${prodName.sku} · ${prodName.name}` : "produto selecionado"}</b> ({v.listings.length})</span>}
+      </form>
       <div className="card overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Anúncio", "Produtos", "Preço", "Custos de venda", "Custo produtos", "Lucro/unid.", "Vendidas", ""].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3 font-normal">{h}</th>)}</tr></thead>
+          <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Foto", "Anúncio", "Produtos", "Preço", "Custos de venda", "Custo produtos", "Lucro/unid.", "Vendidas", ""].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3 font-normal">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-line">{v.listings.map((l) => (
             <tr key={l.id} className={l.status !== "ATIVO" ? "text-muted" : ""} data-ml-listing-row={l.mlItemId ?? l.sku ?? l.id}>
-              <td className="min-w-48 px-4 py-3"><p className="font-medium">{l.title}</p><p className="text-xs text-muted">{[l.mlItemId, l.variation, l.sku && `SKU ${l.sku}`].filter(Boolean).join(" · ")}{l.status !== "ATIVO" ? ` · ${l.status === "PAUSADO" ? "Pausado" : "Encerrado"}` : ""}</p></td>
-              <td className="whitespace-nowrap px-4 py-3 text-xs">{l.components.length ? l.components.map((c) => <p key={c.variantId}>{c.quantity}× {c.sku}{c.mto ? " (encomenda)" : ""}</p>) : <span className="text-warning">nenhum produto</span>}</td>
+              <td className="px-4 py-3"><Thumbs items={l.components.map((c) => ({ image: c.image, name: c.name }))} /></td>
+              <td className="min-w-64 px-4 py-3"><p className="font-medium">{l.title}</p><p className="text-xs text-muted">{[l.mlItemId, l.variation, l.listingType === "premium" ? "Premium" : l.listingType === "classico" ? "Clássico" : null].filter(Boolean).join(" · ")}{l.status !== "ATIVO" ? ` · ${l.status === "PAUSADO" ? "Pausado" : "Encerrado"}` : ""}</p></td>
+              <td className="whitespace-nowrap px-4 py-3 text-xs">{l.components.length ? l.components.map((c) => <p key={c.variantId}><Link className="hover:underline" href={qs({ aba: "anuncios", produto: c.variantId, q: undefined })} title={`Ver todos os anúncios de ${c.name}`}>{c.quantity}× {c.sku}</Link>{c.mto ? " (encomenda)" : ""}</p>) : <span className="text-warning">nenhum produto</span>}</td>
               <td className="whitespace-nowrap px-4 py-3">{l.priceCents != null ? formatBRL(l.priceCents) : "—"}</td>
               <td className="px-4 py-3 text-xs">{[l.saleFeeBps != null && `tarifa ${fmtPct(l.saleFeeBps)}%`, l.fixedFeeCents && `fixa ${formatBRL(l.fixedFeeCents)}`, l.shippingCostCents && `frete ${formatBRL(l.shippingCostCents)}`, l.packagingCents && `embal. ${formatBRL(l.packagingCents)}`, l.taxBps != null && `imposto ${fmtPct(l.taxBps)}%`, l.otherCostCents && `outros ${formatBRL(l.otherCostCents)}`].filter(Boolean).join(" · ") || "—"}</td>
               <td className="whitespace-nowrap px-4 py-3">{l.costMissing ? <span className="text-warning">falta custo</span> : formatBRL(l.unitCostCents ?? 0)}</td>
@@ -168,7 +196,7 @@ async function Listings({ f, period, variants, can }: { f: Parameters<typeof mlL
               <td className="px-4 py-3 text-right"><div className="flex flex-col items-end gap-1"><ListingButton label="Editar" variant="secondary" initial={listingInitFrom(l)} variants={variants} /><DeleteListingButton id={l.id} title={l.title} /></div></td>
             </tr>))}</tbody>
         </table>
-        {v.listings.length === 0 && <p className="p-8 text-center text-sm text-muted">Nenhum anúncio cadastrado ainda.</p>}
+        {v.listings.length === 0 && <p className="p-8 text-center text-sm text-muted">{f.q || f.tipo || f.produto ? "Nenhum anúncio com esses filtros." : "Nenhum anúncio cadastrado ainda."}</p>}
       </div>
       {v.unlinked.length > 0 && (
         <section className="mt-6">
@@ -185,6 +213,41 @@ async function Listings({ f, period, variants, can }: { f: Parameters<typeof mlL
           </table></div>
         </section>
       )}
+    </>
+  );
+}
+
+async function ByProduct({ f, period, qs }: { f: Parameters<typeof mlListingsByProduct>[0]; period: React.ReactNode; qs: Qs }) {
+  const v = await mlListingsByProduct(f);
+  const range = (a: number | null, b: number | null) => (a == null ? "—" : a === b ? formatBRL(a) : `${formatBRL(a)} a ${formatBRL(b!)}`);
+  return (
+    <>
+      <p className="mb-4 max-w-3xl text-sm text-muted">Quantos anúncios cada produto tem no Mercado Livre, pelo SKU ligado ao anúncio. Um kit conta para cada produto dentro dele. Clique no produto para ver os anúncios dele.</p>
+      {period}
+      <div className="mb-4 grid gap-4 sm:grid-cols-3">
+        <div className="card p-4"><p className="label">Produtos com anúncio</p><p className="mt-2 text-2xl">{v.list.length}</p></div>
+        <div className="card p-4"><p className="label">Anúncios cadastrados</p><p className="mt-2 text-2xl">{v.listings}</p></div>
+        <div className="card p-4"><p className="label">Anúncios sem produto ligado</p><p className={`mt-2 text-2xl ${v.noProduct ? "text-warning" : ""}`}>{v.noProduct ? <Link className="hover:underline" href={qs({ aba: "anuncios", produto: "sem" })}>{v.noProduct}</Link> : 0}</p>{v.noProduct > 0 && <p className="mt-1 text-xs text-muted">Clique para ver e ligar o produto em “Editar”.</p>}</div>
+      </div>
+      <div className="card overflow-x-auto" data-by-product>
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Foto", "Produto", "Anúncios", "Sozinho / em kit", "Clássico / Premium", "Preço (anúncios do produto sozinho)", "Lucro/unid. médio", "Vendidas", ""].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3 font-normal">{h}</th>)}</tr></thead>
+          <tbody className="divide-y divide-line">{v.list.map((g) => (
+            <tr key={g.variantId} data-product-group={g.sku}>
+              <td className="px-4 py-3"><Thumbs items={[{ image: g.image, name: g.name }]} size={56} /></td>
+              <td className="min-w-56 px-4 py-3"><Link className="font-medium hover:underline" href={qs({ aba: "anuncios", produto: g.variantId, q: undefined, tipo: undefined })}>{g.name}</Link><p className="text-xs text-muted">SKU {g.sku}{g.code && g.code !== g.sku ? ` · código ${g.code}` : ""}</p></td>
+              <td className="px-4 py-3"><span className="text-xl">{g.total}</span>{g.active !== g.total && <div className="text-xs text-muted">{g.active} ativo(s)</div>}</td>
+              <td className="whitespace-nowrap px-4 py-3">{g.alone} / {g.inKit}</td>
+              <td className="whitespace-nowrap px-4 py-3">{g.classico} / {g.premium}</td>
+              <td className="whitespace-nowrap px-4 py-3">{range(g.minPrice, g.maxPrice)}</td>
+              <td className="whitespace-nowrap px-4 py-3">{g.avgProfit == null ? "—" : money(g.avgProfit)}</td>
+              <td className="px-4 py-3">{g.soldUnits}</td>
+              <td className="px-4 py-3 text-right"><Link className="link text-xs" href={qs({ aba: "anuncios", produto: g.variantId, q: undefined, tipo: undefined })}>Ver anúncios</Link></td>
+            </tr>))}</tbody>
+        </table>
+        {!v.list.length && <p className="p-8 text-center text-sm text-muted">Nenhum anúncio ligado a produto ainda.</p>}
+      </div>
+      <p className="mt-2 text-xs text-muted">“Vendidas” conta as unidades do produto vendidas no período, inclusive dentro de kits. Preço e lucro médio consideram só os anúncios em que o produto é vendido sozinho.</p>
     </>
   );
 }

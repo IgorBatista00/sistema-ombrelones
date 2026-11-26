@@ -187,7 +187,9 @@ export async function markShipped(actorId: string, orderIds: string[], shipped: 
 
 // ====================================================================== consultas
 export const mlFilterSchema = z.object({
-  aba: z.enum(["vendas", "enviar", "anuncios", "lucro"]).optional().catch(undefined),
+  aba: z.enum(["vendas", "enviar", "anuncios", "produtos", "lucro"]).optional().catch(undefined),
+  produto: z.string().max(40).optional().catch(undefined), // anúncios de um produto (variantId) ou "sem" (sem produto ligado)
+  tipo: z.enum(["classico", "premium", ""]).optional().catch(undefined),
   de: z.string().optional().refine((v) => !v || isIsoDay(v)).catch(undefined),
   ate: z.string().optional().refine((v) => !v || isIsoDay(v)).catch(undefined),
   envio: z.enum(["a_enviar", "enviada", "entregue", "problema", "cancelada", "outra", ""]).optional().catch(undefined),
@@ -277,9 +279,19 @@ export async function mlShippingQueue(now = new Date()) {
   }));
 }
 
+const IMG = { orderBy: { position: "asc" as const }, take: 8, select: { url: true, variantId: true } };
+/** Foto do produto da variação: a da própria variação, senão a primeira do produto. */
+const pickImage = (images: { url: string; variantId: string | null }[], variantId: string) => images.find((i) => i.variantId === variantId)?.url ?? images[0]?.url ?? null;
+
 export async function mlListingsView(f: MlFilter) {
   const { de, ate } = mlPeriod(f);
-  const listings = await db.mlListing.findMany({ orderBy: [{ status: "asc" }, { title: "asc" }], include: { components: { include: { variant: { select: { id: true, sku: true, product: { select: { name: true } } } } } } } });
+  const t = f.q?.trim();
+  const where: Prisma.MlListingWhereInput = {
+    ...(f.tipo ? { listingType: f.tipo } : {}),
+    ...(f.produto === "sem" ? { components: { none: {} } } : f.produto ? { components: { some: { variantId: f.produto } } } : {}),
+    ...(t ? { OR: [{ title: { contains: t, mode: "insensitive" } }, { mlItemId: { contains: t, mode: "insensitive" } }, { sku: { contains: t, mode: "insensitive" } }, { components: { some: { variant: { OR: [{ sku: { contains: t, mode: "insensitive" } }, { product: { name: { contains: t, mode: "insensitive" } } }, { product: { code: { contains: t, mode: "insensitive" } } }] } } } }] } : {}),
+  };
+  const listings = await db.mlListing.findMany({ where, orderBy: [{ status: "asc" }, { title: "asc" }], include: { components: { include: { variant: { select: { id: true, sku: true, product: { select: { name: true, code: true, images: IMG } } } } } } } });
   const costs = await unitCosts(db, [...new Set(listings.flatMap((l) => l.components.map((c) => c.variantId)))]);
   const sold = await db.mlOrderItem.groupBy({ by: ["listingId"], where: { saleDate: range(de, ate), orderStatus: { not: "cancelled" }, listingId: { not: null } }, _sum: { quantity: true } });
   const soldMap = new Map(sold.map((s) => [s.listingId!, s._sum.quantity ?? 0]));
@@ -288,12 +300,36 @@ export async function mlListingsView(f: MlFilter) {
   return {
     de, ate, stockFrom: await getMlStockFrom(), unlinked,
     listings: listings.map((l) => {
-      const comp = l.components.map((c) => ({ variantId: c.variantId, sku: c.variant.sku, name: c.variant.product.name, quantity: c.quantity, unitCostCents: costs.get(c.variantId)?.cents ?? null, costSource: costs.get(c.variantId)?.source ?? null, mto: costs.get(c.variantId)?.mto ?? false }));
+      const comp = l.components.map((c) => ({ variantId: c.variantId, sku: c.variant.sku, code: c.variant.product.code, name: c.variant.product.name, image: pickImage(c.variant.product.images, c.variantId), quantity: c.quantity, unitCostCents: costs.get(c.variantId)?.cents ?? null, costSource: costs.get(c.variantId)?.source ?? null, mto: costs.get(c.variantId)?.mto ?? false }));
       const uc = listingUnitCost(comp);
       const sim = l.priceCents != null ? simulateListing(l.priceCents, l, uc.missing ? null : uc.cents) : null;
       return { ...l, components: comp, unitCostCents: uc.cents, costMissing: uc.missing, simulation: sim, soldUnits: soldMap.get(l.id) ?? 0 };
     }),
   };
+}
+
+/** Anúncios agrupados pelo produto (SKU) ligado: quantos anúncios cada produto tem, sozinho ou em kit, por tipo. */
+export async function mlListingsByProduct(f: MlFilter) {
+  const v = await mlListingsView({ ...f, produto: undefined, tipo: undefined });
+  type G = { variantId: string; sku: string; code: string | null; name: string; image: string | null; total: number; alone: number; inKit: number; classico: number; premium: number; active: number; minPrice: number | null; maxPrice: number | null; profitSum: number; profitN: number; soldUnits: number };
+  const groups = new Map<string, G>();
+  let noProduct = 0;
+  for (const l of v.listings) {
+    if (!l.components.length) { noProduct++; continue; }
+    const kit = l.components.length > 1 || l.components.some((c) => c.quantity > 1);
+    for (const c of l.components) {
+      const g = groups.get(c.variantId) ?? { variantId: c.variantId, sku: c.sku, code: c.code, name: c.name, image: c.image, total: 0, alone: 0, inKit: 0, classico: 0, premium: 0, active: 0, minPrice: null, maxPrice: null, profitSum: 0, profitN: 0, soldUnits: 0 };
+      g.total++; if (kit) g.inKit++; else g.alone++;
+      if (l.listingType === "classico") g.classico++; else if (l.listingType === "premium") g.premium++;
+      if (l.status === "ATIVO") g.active++;
+      if (!kit && l.priceCents != null) { g.minPrice = g.minPrice == null ? l.priceCents : Math.min(g.minPrice, l.priceCents); g.maxPrice = g.maxPrice == null ? l.priceCents : Math.max(g.maxPrice, l.priceCents); }
+      if (!kit && l.simulation && !l.simulation.costMissing) { g.profitSum += l.simulation.profit; g.profitN++; }
+      g.soldUnits += l.soldUnits * c.quantity;
+      groups.set(c.variantId, g);
+    }
+  }
+  const list = [...groups.values()].map((g) => ({ ...g, avgProfit: g.profitN ? Math.round(g.profitSum / g.profitN) : null })).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "pt-BR"));
+  return { de: v.de, ate: v.ate, list, noProduct, listings: v.listings.length };
 }
 
 export async function mlProfitByListing(f: MlFilter) {
