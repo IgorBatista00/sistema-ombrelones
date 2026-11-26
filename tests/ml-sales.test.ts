@@ -103,3 +103,17 @@ describe("planilha de vendas real do Mercado Livre", () => {
     expect(_sb("Combine a entrega", sale)).toBeNull();
   });
 });
+
+import { findHeader as _fh, parseMlRow as _pr } from "@/modules/integrations/mercadolivre/sheet-rules";
+describe("resumo de pacote", () => {
+  const head = ["N.º de venda", "Data de venda", "Estado", "Pacote de diversos produtos", "Unidades", "Receita por produtos (BRL)", "Tarifa de venda e impostos (BRL)", "Tarifas de envio (BRL)", "Total (BRL)", "SKU", "# de anúncio", "Título do anúncio", "Preço unitário de venda do anúncio (BRL)"];
+  const h = _fh([head])!;
+  it("linha 'Pacote = Sim' sem valores é ignorada (não vira venda pelo preço unitário)", () => {
+    const r = _pr(["2000019050447610", "18 de outubro de 2026 21:08 hs.", "Entregue", "Sim", "1", "", "", "", "", "PA5005024", "MLB4298402679", "Ombrelone Preto", "370.89"], h.cols, 48);
+    expect(r.ok).toBeNull(); expect(r.packSummary).toBe(true);
+  });
+  it("item do pacote com valores entra normalmente", () => {
+    const r = _pr(["2000015591171753", "18 de outubro de 2026 21:08 hs.", "Entregue", "Sim", "2", "764.72", "-103.24", "-129.8", "531.68", "PA5005021", "MLB4309629977", "Ombrelone Bege", "382.36"], h.cols, 50);
+    expect(r.ok?.productCents).toBe(76472); expect(r.ok?.feeCents).toBe(23304);
+  });
+});

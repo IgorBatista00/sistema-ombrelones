@@ -94,7 +94,7 @@ export type MlSheetRow = {
   quantity: number; unitPriceCents: number; productCents: number; shippingCents: number | null; feeCents: number | null; refundCents: number | null; totalCents: number | null; buyer: string | null;
   saleFeeCents: number | null; shippingFeeCents: number | null; shipBy: Date | null;
 };
-export type MlSheetResult = { line: number; orderId: string; title: string; ok: MlSheetRow | null; errors: string[]; warnings: string[]; skipped: boolean };
+export type MlSheetResult = { line: number; orderId: string; title: string; ok: MlSheetRow | null; errors: string[]; warnings: string[]; skipped: boolean; packSummary?: boolean };
 
 /** Uma linha da planilha → venda (um anúncio de um pedido). Linhas sem anúncio (resumo de pacote) são puladas. */
 export function parseMlRow(cells: string[], cols: Map<MlSheetField, number>, line: number): MlSheetResult {
@@ -105,6 +105,10 @@ export function parseMlRow(cells: string[], cols: Map<MlSheetField, number>, lin
   if (!orderId && !title) return { line, orderId, title, ok: null, errors, warnings, skipped: true };
   if (!orderId || !/^[A-Za-z0-9_-]{4,40}$/.test(orderId)) errors.push(`Nº da venda inválido (${g("order") || "vazio"}).`);
   if (!title) return { line, orderId, title, ok: null, errors, warnings: ["Linha sem anúncio (resumo de pacote?) — ignorada; os produtos vêm nas linhas do pacote."], skipped: true };
+  // linha-resumo de pacote: "Pacote de diversos produtos = Sim" sem nenhum valor — os produtos vêm nas linhas seguintes, cada um com seu nº
+  if (/^sim$/i.test(g("pack")) && [g("productRevenue"), g("total"), g("fee"), g("shippingFee")].every((v) => moneyCents(v) == null)) {
+    return { line, orderId, title, ok: null, errors, warnings: ["Resumo de pacote (sem valores) — ignorado; os produtos do pacote vêm nas linhas com valores."], skipped: true, packSummary: true };
+  }
   const saleDate = parseMlDate(g("date"));
   if (!saleDate) errors.push(`Data da venda não reconhecida (${g("date") || "vazia"}).`);
   const status = [g("status"), g("statusDesc")].filter(Boolean).join(" — ");

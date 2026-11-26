@@ -10,7 +10,7 @@ export function MlSheetImportButton() {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [prev, setPrev] = useState<MlImportPreview | null>(null);
-  const [done, setDone] = useState<{ created: number; updated: number; skipped: number; stockMoves?: number; negative?: string[] } | null>(null);
+  const [done, setDone] = useState<{ created: number; updated: number; skipped: number; removed?: number; stockMoves?: number; negative?: string[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const input = useRef<HTMLInputElement>(null);
@@ -36,7 +36,7 @@ export function MlSheetImportButton() {
             <h2 className="font-sans text-lg font-medium">Importar vendas do Mercado Livre (planilha)</h2>
             {done ? (
               <div className="mt-5 space-y-4 text-sm">
-                <p className="rounded border border-success/40 bg-success/5 p-3" role="status"><b>Importação concluída.</b> {done.created} venda(s) nova(s) · {done.updated} atualizada(s){done.skipped ? ` · ${done.skipped} ignorada(s) (já vieram pela integração)` : ""}.{done.stockMoves ? ` Estoque: ${done.stockMoves} movimentação(ões) pelos anúncios vinculados.` : ""}</p>
+                <p className="rounded border border-success/40 bg-success/5 p-3" role="status"><b>Importação concluída.</b> {done.created} venda(s) nova(s) · {done.updated} atualizada(s){done.skipped ? ` · ${done.skipped} ignorada(s) (já vieram pela integração)` : ""}{done.removed ? ` · ${done.removed} resumo(s) de pacote removido(s)` : ""}.{done.stockMoves ? ` Estoque: ${done.stockMoves} movimentação(ões) pelos anúncios vinculados.` : ""}</p>
                 {!!done.negative?.length && <p className="mt-2 rounded border border-warning/40 bg-warning/5 p-3 text-sm">Atenção: o estoque ficou negativo em {done.negative.join(", ")}. Confira o saldo em Estoque.</p>}
                 <div className="flex justify-end"><button className="h-10 rounded bg-accent px-5 text-sm text-accent-ink" onClick={() => setOpen(false)}>Fechar</button></div>
               </div>
@@ -54,7 +54,7 @@ export function MlSheetImportButton() {
                 {err && <p className="mt-3 rounded border border-danger/40 bg-danger/5 p-3 text-sm text-danger" role="alert">{err}</p>}
                 {prev && (
                   <>
-                    <p className="mt-4 text-sm" data-ml-summary><b>{prev.totals.orders}</b> venda(s) · produtos <b>{formatBRL(prev.totals.productCents)}</b> · tarifas {formatBRL(prev.totals.feeCents)}{prev.totals.cancelled ? ` · ${prev.totals.cancelled} cancelada(s) (entram como estornadas)` : ""}{prev.lineIssues.some((l) => l.errors.length) ? <span className="text-danger"> · {prev.lineIssues.filter((l) => l.errors.length).length} linha(s) com erro (ignoradas)</span> : null}</p>
+                    <p className="mt-4 text-sm" data-ml-summary><b>{prev.totals.orders}</b> venda(s) · produtos <b>{formatBRL(prev.totals.productCents)}</b> · tarifas {formatBRL(prev.totals.feeCents)}{prev.totals.cancelled ? ` · ${prev.totals.cancelled} cancelada(s) (entram como estornadas)` : ""}{prev.totals.removed ? ` · ${prev.totals.removed} resumo(s) de pacote importado(s) antes por engano serão removidos` : ""}{prev.lineIssues.some((l) => l.errors.length) ? <span className="text-danger"> · {prev.lineIssues.filter((l) => l.errors.length).length} linha(s) com erro (ignoradas)</span> : null}</p>
                     <div className="mt-2 flex-1 overflow-auto rounded border border-line">
                       <table className="w-full text-left text-xs">
                         <thead className="sticky top-0 bg-surface text-[10px] uppercase tracking-label text-muted"><tr>{["Venda", "Data", "Comprador", "Itens", "Produtos", "Tarifa", "Líquido", "Situação", "Ação"].map((h) => <th key={h} className="px-3 py-2 font-normal">{h}</th>)}</tr></thead>

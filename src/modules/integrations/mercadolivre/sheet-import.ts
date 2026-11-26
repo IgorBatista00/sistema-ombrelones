@@ -15,7 +15,7 @@ export type MlImportOrder = {
   productCents: number; feeCents: number | null; netCents: number | null; cancelled: boolean; status: string;
   action: "criar" | "atualizar" | "ignorar"; note: string | null;
 };
-export type MlImportPreview = { orders: MlImportOrder[]; lineIssues: { line: number; orderId: string; errors: string[]; warnings: string[] }[]; totals: { orders: number; productCents: number; feeCents: number; cancelled: number } };
+export type MlImportPreview = { orders: MlImportOrder[]; lineIssues: { line: number; orderId: string; errors: string[]; warnings: string[] }[]; totals: { orders: number; productCents: number; feeCents: number; cancelled: number; removed: number } };
 
 async function analyze(buf: Buffer, filename: string) {
   const matrix = await readMatrix(buf, filename);
@@ -47,27 +47,37 @@ async function analyze(buf: Buffer, filename: string) {
     return { ...o, action, note: fromApi.has(orderId) ? "Já veio pela integração direta — mantida a versão da integração." : null };
   });
   const lineIssues = parsed.filter((r) => r.errors.length || r.warnings.length).map((r) => ({ line: r.line, orderId: r.orderId, errors: r.errors, warnings: r.warnings }));
-  return { orders, lineIssues };
+  // resumos de pacote que uma importação antiga gravou como venda: removidos ao importar de novo
+  const summaryIds = parsed.filter((r) => r.packSummary && r.orderId && !byOrder.has(r.orderId)).map((r) => r.orderId);
+  const staleSummaries = summaryIds.length ? (await db.mlReceipt.findMany({ where: { orderId: { in: summaryIds }, paymentId: { startsWith: SHEET_PREFIX } }, select: { orderId: true } })).map((x) => x.orderId) : [];
+  return { orders, lineIssues, staleSummaries };
 }
 
 export async function previewMlSheet(buf: Buffer, filename: string): Promise<MlImportPreview> {
-  const { orders, lineIssues } = await analyze(buf, filename);
+  const { orders, lineIssues, staleSummaries } = await analyze(buf, filename);
   if (!orders.length && !lineIssues.length) throw new AppError("EMPTY", "Nenhuma venda encontrada na planilha.", 422);
   const valid = orders.filter((o) => o.action !== "ignorar" && !o.cancelled);
   return {
     orders: orders.map(({ rows: _r, ...o }) => ({ ...o, saleDate: o.saleDate.toISOString() })), // eslint-disable-line @typescript-eslint/no-unused-vars
     lineIssues,
-    totals: { orders: valid.length, productCents: valid.reduce((a, o) => a + o.productCents, 0), feeCents: valid.reduce((a, o) => a + (o.feeCents ?? 0), 0), cancelled: orders.filter((o) => o.cancelled && o.action !== "ignorar").length },
+    totals: { orders: valid.length, productCents: valid.reduce((a, o) => a + o.productCents, 0), feeCents: valid.reduce((a, o) => a + (o.feeCents ?? 0), 0), cancelled: orders.filter((o) => o.cancelled && o.action !== "ignorar").length, removed: staleSummaries.length },
   };
 }
 
 /** Grava as vendas (como recebimentos "sem informação de liberação") e os itens, para aparecerem na aba, nas categorias e no Meu dia. */
 export async function commitMlSheet(actorId: string, buf: Buffer, filename: string) {
-  const { orders } = await analyze(buf, filename);
+  const { orders, staleSummaries } = await analyze(buf, filename);
   const todo = orders.filter((o) => o.action !== "ignorar");
   if (!todo.length) throw new AppError("NOTHING", "Nenhuma venda para importar (todas já vieram pela integração ou a planilha só tem erros).", 422);
   let stock = { moved: 0, negative: [] as string[] };
   await db.$transaction(async (tx) => {
+    if (staleSummaries.length) { // resumo de pacote gravado como venda por engano: devolve estoque (se baixou) e apaga
+      await tx.mlOrderItem.updateMany({ where: { orderId: { in: staleSummaries } }, data: { orderStatus: "cancelled" } });
+      await applyMlStock(tx, actorId, staleSummaries);
+      await tx.mlOrderItem.deleteMany({ where: { orderId: { in: staleSummaries } } });
+      await tx.mlOrderControl.deleteMany({ where: { orderId: { in: staleSummaries } } });
+      await tx.mlReceipt.deleteMany({ where: { orderId: { in: staleSummaries }, paymentId: { startsWith: SHEET_PREFIX } } });
+    }
     for (const o of todo) {
       const data = {
         paymentId: `${SHEET_PREFIX}${o.orderId}`, orderId: o.orderId, packId: null, orderStatus: o.cancelled ? "cancelled" : "paid", paymentStatus: o.cancelled ? "refunded" : "approved",
@@ -90,7 +100,7 @@ export async function commitMlSheet(actorId: string, buf: Buffer, filename: stri
     const ids = todo.map((o) => o.orderId);
     await relinkItems(tx, ids);
     stock = await applyMlStock(tx, actorId, ids);
-    await tx.auditLog.create({ data: { actorId, action: "mercadolivre.sheet_import", entity: "MlReceipt", entityId: "planilha", after: { file: filename.slice(0, 120), created: todo.filter((o) => o.action === "criar").length, updated: todo.filter((o) => o.action === "atualizar").length } } });
+    await tx.auditLog.create({ data: { actorId, action: "mercadolivre.sheet_import", entity: "MlReceipt", entityId: "planilha", after: { file: filename.slice(0, 120), created: todo.filter((o) => o.action === "criar").length, updated: todo.filter((o) => o.action === "atualizar").length, removedPackSummaries: staleSummaries } } });
   }, { timeout: 120_000 });
-  return { created: todo.filter((o) => o.action === "criar").length, updated: todo.filter((o) => o.action === "atualizar").length, skipped: orders.length - todo.length, stockMoves: stock.moved, negative: stock.negative };
+  return { created: todo.filter((o) => o.action === "criar").length, updated: todo.filter((o) => o.action === "atualizar").length, skipped: orders.length - todo.length, removed: staleSummaries.length, stockMoves: stock.moved, negative: stock.negative };
 }
