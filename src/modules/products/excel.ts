@@ -1,6 +1,6 @@
 import "server-only";
 import ExcelJS from "exceljs";
-import { readXlsxLite } from "@/lib/xlsx-lite";
+import { readXlsxLiteAll } from "@/lib/xlsx-lite";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { AppError } from "@/lib/errors";
@@ -174,7 +174,9 @@ export async function readMatrix(buf: Buffer, filename: string, pick?: (matrix: 
       matrix = chosen ? chosen.m : toMatrix(wb.worksheets[0]);
     } else {
       // reserva: alguns programas gravam comentários que o ExcelJS não abre — lê só os valores direto do arquivo
-      try { matrix = await readXlsxLite(buf); } catch { throw new AppError("BAD_FILE", "Não foi possível ler a planilha. Salve como .xlsx ou .csv."); }
+      let all: { name: string; matrix: string[][] }[];
+      try { all = await readXlsxLiteAll(buf); } catch { throw new AppError("BAD_FILE", "Não foi possível ler a planilha. Salve como .xlsx ou .csv."); }
+      matrix = (pick ? all.find((x) => pick(x.matrix, x.name)) : null)?.matrix ?? all[0].matrix;
     }
   } else {
     throw new AppError("BAD_FILE", "Formato não suportado. Use .xlsx ou .csv (arquivos .xls antigos: salve como .xlsx).");
