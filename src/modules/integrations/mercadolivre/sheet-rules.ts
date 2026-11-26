@@ -13,7 +13,7 @@ export function fieldOf(header: string): MlSheetField | null {
   if (!h) return null;
   if (/^(n|no|nr|numero|#)( o)? (de |da )?venda$/.test(h) || h === "venda" || h === "id da venda" || h === "numero do pedido" || h === "pedido") return "order";
   if (/^(data )?limite (de |para )?(despacho|envio|postagem|entrega na transportadora)/.test(h) || /^(despachar|enviar|postar) ate/.test(h)) return "shipBy";
-  if (/^data (da )?venda$/.test(h) || h === "data") return "date";
+  if (/^data (da |de )?venda$/.test(h) || h === "data") return "date";
   if (/^descricao (do )?(status|estado)$/.test(h)) return "statusDesc";
   if (h === "estado" || h === "status" || h === "situacao") return "status";
   if (/^pacote/.test(h)) return "pack";
@@ -75,6 +75,18 @@ export function parseMlDate(raw: string | undefined): Date | null {
   return back === `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}` ? date : null;
 }
 
+/** Prazo de despacho escrito no status: "Para entregar na coleta do dia 30 de novembro", "…postar até 3 de dezembro". */
+export function shipByFromStatus(status: string, saleDate: Date): Date | null {
+  const t = norm(status);
+  const m = t.match(/(?:coleta|entregar|postar|despachar|enviar)[a-z ]*?(?:dia |ate )(\d{1,2}) de ([a-z]+)(?: de (\d{4}))?/);
+  if (!m) return null;
+  const mon = MONTHS.indexOf(m[2]) + 1; if (mon < 1) return null;
+  const saleY = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric" }).format(saleDate));
+  const saleM = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", month: "numeric" }).format(saleDate));
+  const y = m[3] ? +m[3] : mon < saleM ? saleY + 1 : saleY; // dezembro → janeiro vira o ano seguinte
+  return parseMlDate(`${m[1]}/${mon}/${y} 23:59`);
+}
+
 export const isCancelled = (status: string) => /cancel|devolu|reembols|nao concretizada|não concretizada/i.test(status);
 
 export type MlSheetRow = {
@@ -115,6 +127,6 @@ export function parseMlRow(cells: string[], cols: Map<MlSheetField, number>, lin
     shippingCents: shipRev != null ? Math.abs(shipRev) : null,
     feeCents: fee != null || shipFee != null ? Math.abs(fee ?? 0) + Math.abs(shipFee ?? 0) : null,
     refundCents: refund != null ? Math.abs(refund) : null, totalCents: total, buyer: g("buyer") || null,
-    saleFeeCents: fee != null ? Math.abs(fee) : null, shippingFeeCents: shipFee != null ? Math.abs(shipFee) : null, shipBy: parseMlDate(g("shipBy")),
+    saleFeeCents: fee != null ? Math.abs(fee) : null, shippingFeeCents: shipFee != null ? Math.abs(shipFee) : null, shipBy: parseMlDate(g("shipBy")) ?? shipByFromStatus(status, saleDate!),
   } };
 }

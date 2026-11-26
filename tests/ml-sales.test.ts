@@ -88,3 +88,18 @@ describe("Mercado Livre · planilha", () => {
     expect(r.shipBy?.toISOString()).toBe(new Date("2026-11-21T12:00:00-03:00").toISOString());
   });
 });
+
+import { fieldOf as _fieldOf, parseMlDate as _pd, shipByFromStatus as _sb } from "@/modules/integrations/mercadolivre/sheet-rules";
+describe("planilha de vendas real do Mercado Livre", () => {
+  it("reconhece 'Data de venda' e o formato '26 de novembro de 2026 14:07 hs.'", () => {
+    expect(_fieldOf("Data de venda")).toBe("date");
+    expect(_pd("26 de novembro de 2026 14:07 hs.")?.toISOString()).toBe("2026-11-26T17:07:00.000Z");
+  });
+  it("prazo de despacho a partir do status", () => {
+    const sale = new Date("2026-11-26T17:07:00Z");
+    expect(_sb("Para entregar na coleta do dia 30 de novembro", sale)?.toISOString()).toBe("2026-12-01T02:59:00.000Z");
+    expect(_sb("Para entregar na coleta do dia 9 de dezembro", sale)?.toISOString().slice(0, 10)).toBe("2026-12-10");
+    expect(_sb("Para entregar na coleta do dia 5 de janeiro", new Date("2026-12-28T12:00:00Z"))?.toISOString().slice(0, 10)).toBe("2027-01-06");
+    expect(_sb("Combine a entrega", sale)).toBeNull();
+  });
+});
