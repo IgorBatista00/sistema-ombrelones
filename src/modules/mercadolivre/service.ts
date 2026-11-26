@@ -187,9 +187,11 @@ export async function markShipped(actorId: string, orderIds: string[], shipped: 
 
 // ====================================================================== consultas
 export const mlFilterSchema = z.object({
-  aba: z.enum(["painel", "vendas", "enviar", "anuncios", "produtos", "lucro"]).optional().catch(undefined),
+  aba: z.enum(["painel", "vendas", "enviar", "anuncios", "produtos", "qualidade", "lucro"]).optional().catch(undefined),
   produto: z.string().max(40).optional().catch(undefined), // anúncios de um produto (variantId) ou "sem" (sem produto ligado)
   tipo: z.enum(["classico", "premium", ""]).optional().catch(undefined),
+  sev: z.enum(["critico", "aviso", "info", "ok", ""]).optional().catch(undefined), // qualidade dos dados
+  problema: z.string().max(30).optional().catch(undefined),
   de: z.string().optional().refine((v) => !v || isIsoDay(v)).catch(undefined),
   ate: z.string().optional().refine((v) => !v || isIsoDay(v)).catch(undefined),
   envio: z.enum(["a_enviar", "enviada", "entregue", "problema", "cancelada", "outra", ""]).optional().catch(undefined),
