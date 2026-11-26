@@ -6,12 +6,12 @@ import { AppError } from "@/lib/errors";
 import { parseMoney } from "@/modules/products/cost";
 import { isIsoDay, brDate, spDay, dayDiff } from "@/modules/purchase-orders/rules";
 import {
-  SHIP_STAGE, bpsFromPct, lineProfit, listingUnitCost, matchListing, shipStage, simulateListing, stockAdjustments, stockRef, variantUnitCost, type ShipStage,
+  SHIP_STAGE, bpsFromPct, lineProfit, soldLineOf, listingUnitCost, matchListing, shipStage, simulateListing, stockAdjustments, stockRef, variantUnitCost, type ShipStage,
 } from "./rules";
 
 type Tx = Prisma.TransactionClient;
 const STOCK_KEY = "ml-stock";
-const cancelledOf = (status: string) => status === "cancelled";
+export const cancelledOf = (status: string) => status === "cancelled";
 
 // ====================================================================== configuração da baixa de estoque
 /** A baixa automática só vale para vendas a partir desta data (evita baixar de novo o histórico já refletido no estoque). */
@@ -174,6 +174,15 @@ export async function applyPendingStock(actorId: string) {
   return { orders: ids.length, ...r };
 }
 
+/** "Recalcular custos": liga vendas a anúncios novos e grava o custo nas vendas que estavam sem (produto que ganhou custo depois). */
+export async function recalcSaleCosts(actorId: string) {
+  const before = await db.mlOrderItem.count({ where: { costCents: null, orderStatus: { not: "cancelled" } } });
+  const changed = await db.$transaction((tx) => relinkItems(tx), { timeout: 120_000 });
+  const after = await db.mlOrderItem.count({ where: { costCents: null, orderStatus: { not: "cancelled" } } });
+  await db.auditLog.create({ data: { actorId, action: "mercadolivre.recalc_costs", entity: "MlOrderItem", entityId: "todas", after: { changed, semCustoAntes: before, semCustoDepois: after } } });
+  return { changed, fixed: Math.max(0, before - after), left: after };
+}
+
 // ====================================================================== expedição
 export async function markShipped(actorId: string, orderIds: string[], shipped: boolean) {
   const ids = [...new Set(orderIds)].slice(0, 500);
@@ -187,10 +196,10 @@ export async function markShipped(actorId: string, orderIds: string[], shipped: 
 
 // ====================================================================== consultas
 export const mlFilterSchema = z.object({
-  aba: z.enum(["painel", "vendas", "enviar", "anuncios", "produtos", "qualidade", "lucro"]).optional().catch(undefined),
+  aba: z.preprocess((v) => (v === "qualidade" ? "validacao" : v), z.enum(["painel", "vendas", "enviar", "anuncios", "produtos", "validacao", "lucro"]).optional()).catch(undefined),
   produto: z.string().max(40).optional().catch(undefined), // anúncios de um produto (variantId) ou "sem" (sem produto ligado)
   tipo: z.enum(["classico", "premium", ""]).optional().catch(undefined),
-  sev: z.enum(["critico", "aviso", "info", "ok", ""]).optional().catch(undefined), // qualidade dos dados
+  sev: z.enum(["critico", "aviso", "ok", "canceladas", ""]).optional().catch(undefined), // validação das vendas
   problema: z.string().max(30).optional().catch(undefined),
   de: z.string().optional().refine((v) => !v || isIsoDay(v)).catch(undefined),
   ate: z.string().optional().refine((v) => !v || isIsoDay(v)).catch(undefined),
@@ -225,7 +234,7 @@ export async function ordersIn(where: Prisma.MlOrderItemWhereInput) {
     const cancelled = its.every((i) => cancelledOf(i.orderStatus));
     const lines = its.map((i) => {
       const unitCost = i.costCents != null ? i.costCents / i.quantity : null;
-      const p = lineProfit({ quantity: i.quantity, productCents: i.productCents ?? i.unitPriceCents * i.quantity, shippingRevenueCents: i.shippingRevenueCents, saleFeeTotalCents: i.saleFeeTotalCents ?? (i.saleFeeCents != null ? i.saleFeeCents * i.quantity : null), shippingFeeCents: i.shippingFeeCents, refundCents: i.refundCents, cancelled: cancelledOf(i.orderStatus) }, i.listing, unitCost);
+      const p = lineProfit(soldLineOf(i, cancelledOf(i.orderStatus)), i.listing, unitCost);
       return { id: i.id, itemId: i.itemId, title: i.title, variation: i.variation, sku: i.sku, quantity: i.quantity, listingId: i.listingId, listingTitle: i.listing?.title ?? null, mto: false, ...p };
     });
     const sum = (k: "revenue" | "fees" | "shipping" | "cost" | "extras" | "tax" | "profit") => lines.reduce((a, l) => a + l[k], 0);

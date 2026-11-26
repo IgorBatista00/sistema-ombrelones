@@ -72,6 +72,15 @@ export function lineProfit(line: SoldLine, listing: ListingCosts | null, unitCos
   };
 }
 
+/** Linha vendida a partir do item importado. Na planilha (com "Total"), coluna de envio em branco = R$ 0 — não estima pelo anúncio. */
+export function soldLineOf(i: { quantity: number; productCents: number | null; unitPriceCents: number; shippingRevenueCents: number | null; saleFeeTotalCents: number | null; saleFeeCents: number | null; shippingFeeCents: number | null; refundCents: number | null; netCents: number | null }, cancelled: boolean): SoldLine {
+  return {
+    quantity: i.quantity, productCents: i.productCents ?? i.unitPriceCents * i.quantity, shippingRevenueCents: i.shippingRevenueCents,
+    saleFeeTotalCents: i.saleFeeTotalCents ?? (i.saleFeeCents != null ? i.saleFeeCents * i.quantity : null),
+    shippingFeeCents: i.shippingFeeCents ?? (i.netCents != null ? 0 : null), refundCents: i.refundCents, cancelled,
+  };
+}
+
 /** Simulação no cadastro do anúncio: quanto sobra por unidade vendida ao preço informado. */
 export function simulateListing(priceCents: number, l: ListingCosts, unitCostCents: number | null) {
   return lineProfit({ quantity: 1, productCents: priceCents }, l, unitCostCents);

@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition, type ReactNode } from "react";
-import { applyPendingStockAction, deleteListingAction, markShippedAction, saveListingAction, setMlStockFromAction } from "@/modules/admin/ml-actions";
+import { applyPendingStockAction, deleteListingAction, markShippedAction, recalcSaleCostsAction, saveListingAction, setMlStockFromAction } from "@/modules/admin/ml-actions";
 import { bpsFromPct, listingUnitCost, simulateListing } from "@/modules/mercadolivre/rules";
 import { formatBRL } from "@/lib/money";
 import type { ListingInit } from "@/modules/mercadolivre/listing-form";
@@ -156,6 +156,18 @@ export function StockFromForm({ current }: { current: string | null }) {
       {current && <button type="button" className={`${btn} h-10 hover:bg-ink/5`} disabled={pending} onClick={() => { setV(""); go(() => setMlStockFromAction(null), () => setMsg("Baixa automática desligada.")); }}>Desligar</button>}
       {msg && <span className="pb-2 text-xs text-success">{msg}</span>}{err && <span className="pb-2 text-xs text-danger">{err}</span>}
     </div>
+  );
+}
+
+export function RecalcCostsButton() {
+  const [res, setRes] = useState<string | null>(null);
+  const { err, pending, go } = useAct();
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <button type="button" className={`${btn} border border-line bg-white hover:bg-ink/5`} disabled={pending} onClick={() => go(() => recalcSaleCostsAction(), (d) => setRes(d.fixed ? `${d.fixed} venda(s) passaram a ter custo.${d.left ? ` Ainda sem custo: ${d.left}.` : ""}` : d.left ? `Nenhuma venda mudou. Ainda sem custo: ${d.left} — cadastre o anúncio ou o custo do produto.` : "Todas as vendas já têm custo."))} data-ml-recalc>
+        {pending ? "Recalculando…" : "Recalcular custos"}</button>
+      {res && <span className="text-xs" role="status">{res}</span>}{err && <span className="text-xs text-danger">{err}</span>}
+    </span>
   );
 }
 

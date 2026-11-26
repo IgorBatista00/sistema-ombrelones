@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import type { AdminPermission } from "@prisma/client";
 import { AppError } from "@/lib/errors";
 import { requireAdminAny } from "@/modules/auth/session";
-import { applyPendingStock, deleteListing, markShipped, saveListing, setMlStockFrom } from "@/modules/mercadolivre/service";
+import { applyPendingStock, deleteListing, markShipped, recalcSaleCosts, saveListing, setMlStockFrom } from "@/modules/mercadolivre/service";
 
 type R<T> = { ok: true; data: T } | { ok: false; error: string };
 async function run<T>(perms: AdminPermission[], fn: (actorId: string) => Promise<T>): Promise<R<T>> {
@@ -23,3 +23,4 @@ export const deleteListingAction = async (id: string) => run(["PRODUCTS", "FINAN
 export const markShippedAction = async (orderIds: string[], shipped: boolean) => run(["LOGISTICS", "ORDERS"], (a) => markShipped(a, orderIds, shipped));
 export const setMlStockFromAction = async (from: string | null) => run(["STOCK"], (a) => setMlStockFrom(a, from));
 export const applyPendingStockAction = async () => run(["STOCK"], (a) => applyPendingStock(a));
+export const recalcSaleCostsAction = async () => run(["PRODUCTS", "FINANCE"], (a) => recalcSaleCosts(a));

@@ -9,9 +9,9 @@ import { MlSheetImportButton } from "@/components/admin/ml-sheet-import";
 import { MlListingImportButton } from "@/components/admin/ml-listing-import";
 import { MlDashboardView } from "@/components/admin/ml-dashboard";
 import { mlDashboard } from "@/modules/mercadolivre/dashboard";
-import { mlDataQuality } from "@/modules/mercadolivre/quality";
-import { ISSUES, SEV_LABEL, type IssueCode } from "@/modules/mercadolivre/quality-rules";
-import { ApplyStockButton, DeleteListingButton, ListingButton, ShipButton, ShipQueueSelect, StockFromForm } from "@/components/admin/ml";
+import { mlSaleCheck } from "@/modules/mercadolivre/sale-check";
+import { LEVEL_LABEL, SALE_ISSUES, type SaleIssue } from "@/modules/mercadolivre/sale-check-rules";
+import { ApplyStockButton, DeleteListingButton, ListingButton, RecalcCostsButton, ShipButton, ShipQueueSelect, StockFromForm } from "@/components/admin/ml";
 import { emptyListing, listingInitFrom } from "@/modules/mercadolivre/listing-form";
 import { listingFormOptions, mlFilterSchema, mlListingsByProduct, mlListingsView, mlPeriod, mlProfitByListing, mlSalesView, mlShippingQueue } from "@/modules/mercadolivre/service";
 import { SHIP_STAGE, fmtPct } from "@/modules/mercadolivre/rules";
@@ -28,11 +28,11 @@ export default async function MercadoLivrePage({ searchParams }: { searchParams:
   const has = (p: string) => admin.permissions.includes(p as never);
   const can = { profit: has("FINANCE") || has("PRODUCTS"), ship: has("LOGISTICS") || has("ORDERS"), stock: has("STOCK"), imp: has("FINANCE") || has("ORDERS") };
   const f = mlFilterSchema.parse(await searchParams);
-  const tabs = ([["painel", "Painel"], ["vendas", "Vendas"], ["enviar", "A enviar"], ["anuncios", "Anúncios"], ["produtos", "Anúncios por produto"], ["qualidade", "Qualidade dos dados"], ["lucro", "Lucro por anúncio"]] as const).filter(([k]) => (k === "anuncios" || k === "produtos" || k === "qualidade" || k === "lucro" || k === "painel" ? can.profit : true));
+  const tabs = ([["painel", "Painel"], ["vendas", "Vendas"], ["enviar", "A enviar"], ["anuncios", "Anúncios"], ["produtos", "Anúncios por produto"], ["validacao", "Validação das vendas"], ["lucro", "Lucro por anúncio"]] as const).filter(([k]) => (k === "anuncios" || k === "produtos" || k === "validacao" || k === "lucro" || k === "painel" ? can.profit : true));
   const aba = tabs.some(([k]) => k === f.aba) ? f.aba! : !has("ORDERS") && !has("FINANCE") ? "enviar" : can.profit ? "painel" : "vendas";
   const { de, ate } = mlPeriod(f);
   const qs = (patch: Record<string, string | undefined>) => { const p = new URLSearchParams(); for (const [k, v] of Object.entries({ ...f, ...patch })) if (v) p.set(k, v); return `/admin/mercadolivre?${p}`; };
-  const variants = can.profit && (aba === "anuncios" || aba === "lucro" || aba === "vendas" || aba === "qualidade") ? await listingFormOptions() : [];
+  const variants = can.profit && (aba === "anuncios" || aba === "lucro" || aba === "vendas" || aba === "validacao") ? await listingFormOptions() : [];
 
   const period = (
     <form className="card mb-5 flex flex-wrap items-end gap-3 p-4" role="search">
@@ -65,7 +65,7 @@ export default async function MercadoLivrePage({ searchParams }: { searchParams:
       {aba === "enviar" && <ToShip can={can} />}
       {aba === "anuncios" && <Listings f={f} period={period} variants={variants} can={can} qs={qs} />}
       {aba === "produtos" && <ByProduct f={f} period={period} qs={qs} />}
-      {aba === "qualidade" && <Quality f={f} qs={qs} variants={variants} />}
+      {aba === "validacao" && <SaleCheck f={f} qs={qs} variants={variants} />}
       {aba === "lucro" && <Profit f={f} period={period} />}
     </>
   );
@@ -230,55 +230,67 @@ async function Listings({ f, period, variants, can, qs }: { f: Parameters<typeof
   );
 }
 
-const SEV_STYLE = { critico: { cls: "text-danger", bg: "bg-danger/10 border-danger/30", icon: "✕" }, aviso: { cls: "text-warning", bg: "bg-warning/10 border-warning/30", icon: "!" }, info: { cls: "text-muted", bg: "bg-ink/[0.04] border-line", icon: "i" }, ok: { cls: "text-success", bg: "bg-success/10 border-success/30", icon: "✓" } } as const;
-function SevBadge({ sev }: { sev: keyof typeof SEV_STYLE }) {
-  const s = SEV_STYLE[sev];
-  return <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 text-xs font-medium ${s.bg} ${s.cls}`}><span aria-hidden className="grid h-3.5 w-3.5 place-items-center rounded-full border border-current text-[9px] leading-none">{s.icon}</span>{sev === "ok" ? "Completo" : SEV_LABEL[sev]}</span>;
+const LEVEL_STYLE = { critico: { cls: "text-danger", bg: "bg-danger/10 border-danger/30", icon: "✕", dot: "bg-danger" }, aviso: { cls: "text-warning", bg: "bg-warning/10 border-warning/30", icon: "!", dot: "bg-warning" }, info: { cls: "text-muted", bg: "bg-ink/[0.04] border-line", icon: "i", dot: "bg-ink/30" }, ok: { cls: "text-success", bg: "bg-success/10 border-success/30", icon: "✓", dot: "bg-success" } } as const;
+function LevelBadge({ level, cancelled }: { level: keyof typeof LEVEL_STYLE; cancelled?: boolean }) {
+  const s = LEVEL_STYLE[level];
+  return <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 text-xs font-medium ${s.bg} ${s.cls}`}><span aria-hidden className="grid h-3.5 w-3.5 place-items-center rounded-full border border-current text-[9px] leading-none">{s.icon}</span>{level === "ok" && cancelled ? "Cancelada" : LEVEL_LABEL[level]}</span>;
 }
 
-async function Quality({ f, qs, variants }: { f: Parameters<typeof mlDataQuality>[0]; qs: Qs; variants: Awaited<ReturnType<typeof listingFormOptions>> }) {
-  const { summary: s, list } = await mlDataQuality(f);
-  const pctOk = s.total ? Math.round((s.ok / s.total) * 100) : 100;
-  const chip = (patch: Record<string, string | undefined>, label: React.ReactNode, active: boolean, key: string) => <Link key={key} href={qs({ aba: "qualidade", ...patch })} className={`rounded border px-3 py-1.5 text-xs ${active ? "border-ink bg-ink text-canvas" : "border-line bg-white hover:border-ink/50"}`}>{label}</Link>;
+async function SaleCheck({ f, qs, variants }: { f: Parameters<typeof mlSaleCheck>[0]; qs: Qs; variants: Awaited<ReturnType<typeof listingFormOptions>> }) {
+  const { summary: s, list } = await mlSaleCheck(f);
+  const pctOk = s.active ? Math.round((s.ok / s.active) * 100) : 100;
+  const diff = s.mlNet - s.columnsNet;
+  const chip = (patch: Record<string, string | undefined>, label: React.ReactNode, active: boolean, key: string) => <Link key={key} href={qs({ aba: "validacao", ...patch })} className={`rounded border px-3 py-1.5 text-xs ${active ? "border-ink bg-ink text-canvas" : "border-line bg-white hover:border-ink/50"}`}>{label}</Link>;
   return (
     <>
-      <p className="mb-4 max-w-3xl text-sm text-muted">Confere cada anúncio e mostra o que está faltando para o custo, o lucro e o estoque saírem certos. <b className="font-medium text-ink">Crítico</b> deixa venda sem custo (lucro errado); <b className="font-medium text-ink">Atenção</b> deixa o cálculo impreciso; <b className="font-medium text-ink">Sugestão</b> é opcional.</p>
-      <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5" data-quality-summary>
-        <div className="card p-4"><p className="label">Nota geral</p><p className={`mt-2 text-3xl ${s.score >= 80 ? "text-success" : s.score >= 50 ? "text-warning" : "text-danger"}`}>{s.score}<span className="text-base text-muted">/100</span></p><p className="mt-1 text-xs text-muted">{pctOk}% dos anúncios completos (sem crítico nem atenção)</p></div>
-        <div className="card p-4"><p className="label">Anúncios analisados</p><p className="mt-2 text-3xl">{s.total}</p><p className="mt-1 text-xs text-muted">inclui os vendidos sem cadastro</p></div>
-        <div className="card p-4"><p className="label">Críticos</p><p className={`mt-2 text-3xl ${s.critico ? "text-danger" : ""}`}>{s.critico}</p><p className="mt-1 text-xs text-muted">{s.salesWithoutCost} item(ns) vendido(s) sem custo</p></div>
-        <div className="card p-4"><p className="label">Atenção</p><p className={`mt-2 text-3xl ${s.aviso ? "text-warning" : ""}`}>{s.aviso}</p><p className="mt-1 text-xs text-muted">cálculo impreciso</p></div>
-        <div className="card p-4"><p className="label">Completos</p><p className={`mt-2 text-3xl ${s.ok ? "text-success" : ""}`}>{s.ok}</p><p className="mt-1 text-xs text-muted">{s.info ? `${s.info} com sugestões opcionais` : "sem pendências"}</p></div>
+      <p className="mb-4 max-w-3xl text-sm text-muted">Confere cada venda importada da planilha do Mercado Livre: se está ligada a um anúncio e tem custo, se as tarifas vieram e se a soma das colunas bate com o <b className="font-medium text-ink">Total</b> que o ML informa. <b className="font-medium text-ink">Crítico</b> deixa o lucro errado; <b className="font-medium text-ink">Atenção</b> merece conferência.</p>
+      <form className="card mb-4 flex flex-wrap items-end gap-3 p-4" role="search">
+        <input type="hidden" name="aba" value="validacao" />{f.sev && <input type="hidden" name="sev" value={f.sev} />}{f.problema && <input type="hidden" name="problema" value={f.problema} />}
+        <fieldset className="text-xs text-muted"><legend>Período da venda (em branco = todas)</legend><div className="mt-1 flex items-center gap-1.5"><Input type="date" name="de" defaultValue={f.de ?? ""} className="h-10 w-[150px]" aria-label="De" /><span>até</span><Input type="date" name="ate" defaultValue={f.ate ?? ""} className="h-10 w-[150px]" aria-label="Até" /></div></fieldset>
+        <label className="block min-w-[220px] flex-1 text-xs text-muted">Buscar<Input name="q" defaultValue={f.q ?? ""} placeholder="Nº da venda, anúncio, MLB ou SKU" className="mt-1 h-10" /></label>
+        <Button type="submit" className="h-10">Filtrar</Button>
+        {(f.de || f.ate || f.q) && <Link href={qs({ aba: "validacao", de: undefined, ate: undefined, q: undefined })} className="pb-2 text-xs underline">Limpar</Link>}
+      </form>
+      <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-check-summary>
+        <div className="card p-4"><p className="label">Vendas conferidas</p><p className={`mt-2 text-3xl ${pctOk >= 90 ? "text-success" : pctOk >= 60 ? "text-warning" : "text-danger"}`}>{pctOk}%</p><p className="mt-1 text-xs text-muted">{s.ok} de {s.active} vendas válidas sem crítico nem atenção · {s.cancelled} cancelada(s)</p></div>
+        <div className="card p-4"><p className="label">Críticas</p><p className={`mt-2 text-3xl ${s.critico ? "text-danger" : ""}`}>{s.critico}</p><p className="mt-1 text-xs text-muted">{s.noCostUnits ? `${s.noCostUnits} un. sem custo · ${formatBRL(s.noCostRevenue)} faturados sem custo` : "nenhuma venda sem custo"}</p></div>
+        <div className="card p-4"><p className="label">Atenção</p><p className={`mt-2 text-3xl ${s.aviso ? "text-warning" : ""}`}>{s.aviso}</p><p className="mt-1 text-xs text-muted">{s.cancelledValue ? `canceladas com ${formatBRL(s.cancelledValue)} lançados pelo ML` : "valores para conferir"}</p></div>
+        <div className="card p-4" data-check-total><p className="label">Conferência com o Total do ML</p><p className={`mt-2 text-3xl ${Math.abs(diff) >= 200 ? "text-danger" : "text-success"}`}>{diff === 0 ? "Bate" : formatBRL(diff)}</p><p className="mt-1 text-xs text-muted">ML informa {formatBRL(s.mlNet)} líquido; as colunas somam {formatBRL(s.columnsNet)} ({s.withTotal} vendas válidas com Total)</p></div>
       </div>
-      <div className="card mb-4 p-4" data-quality-filters>
+      <div className="mb-4 flex flex-wrap items-center gap-3"><RecalcCostsButton /><span className="text-xs text-muted">Use depois de cadastrar anúncios ou custos de produtos: as vendas que estavam sem custo passam a ter.</span></div>
+      <div className="card mb-4 p-4" data-check-filters>
         <p className="mb-2 text-xs text-muted">Filtrar por nível</p>
-        <div className="flex flex-wrap gap-2">{chip({ sev: undefined, problema: undefined }, `Todos (${s.total})`, !f.sev && !f.problema, "t")}{(["critico", "aviso", "info", "ok"] as const).map((k) => chip({ sev: k, problema: undefined }, `${k === "ok" ? "Sem nenhuma pendência" : k === "info" ? "Só sugestões" : SEV_LABEL[k]} (${k === "ok" ? s.ok - s.info : s[k]})`, f.sev === k, k))}</div>
-        <p className="mb-2 mt-4 text-xs text-muted">Filtrar pelo que está faltando</p>
-        <div className="flex flex-wrap gap-2">{s.byIssue.map((i) => chip({ problema: i.code, sev: undefined }, <span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${i.sev === "critico" ? "bg-danger" : i.sev === "aviso" ? "bg-warning" : "bg-ink/30"}`} />{i.label} ({i.count})</span>, f.problema === i.code, i.code))}</div>
-        <form className="mt-4 flex flex-wrap items-end gap-2" role="search"><input type="hidden" name="aba" value="qualidade" />{f.sev && <input type="hidden" name="sev" value={f.sev} />}{f.problema && <input type="hidden" name="problema" value={f.problema} />}
-          <label className="text-xs text-muted">Buscar<Input name="q" defaultValue={f.q ?? ""} placeholder="Título, MLB ou SKU" className="mt-1 h-9 w-72" /></label><Button type="submit" variant="secondary" className="h-9">Buscar</Button></form>
+        <div className="flex flex-wrap gap-2">{chip({ sev: undefined, problema: undefined }, `Todas (${s.total})`, !f.sev && !f.problema, "t")}{chip({ sev: "critico", problema: undefined }, `Crítico (${s.critico})`, f.sev === "critico", "c")}{chip({ sev: "aviso", problema: undefined }, `Atenção (${s.aviso})`, f.sev === "aviso", "a")}{chip({ sev: "ok", problema: undefined }, `Conferidas (${s.ok})`, f.sev === "ok", "o")}{chip({ sev: "canceladas", problema: undefined }, `Canceladas (${s.cancelled})`, f.sev === "canceladas", "x")}</div>
+        {s.byIssue.length > 0 && <><p className="mb-2 mt-4 text-xs text-muted">Filtrar pelo problema</p>
+        <div className="flex flex-wrap gap-2">{s.byIssue.map((i) => chip({ problema: i.code, sev: undefined }, <span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${LEVEL_STYLE[i.level].dot}`} />{i.label} ({i.count})</span>, f.problema === i.code, i.code))}</div></>}
       </div>
-      {f.problema && ISSUES[f.problema as IssueCode] && <p className="mb-3 rounded border border-line bg-white px-4 py-2 text-sm"><b className="font-medium">{ISSUES[f.problema as IssueCode].label}:</b> {ISSUES[f.problema as IssueCode].fix}</p>}
-      <div className="card overflow-x-auto" data-quality-table>
+      {f.problema && SALE_ISSUES[f.problema as SaleIssue] && <p className="mb-3 rounded border border-line bg-white px-4 py-2 text-sm"><b className="font-medium">{SALE_ISSUES[f.problema as SaleIssue].label}:</b> {SALE_ISSUES[f.problema as SaleIssue].fix}</p>}
+      <div className="card overflow-x-auto" data-check-table>
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Foto", "Anúncio", "Nível", "Nota", "O que está faltando", "Vendas", ""].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3 font-normal">{h}</th>)}</tr></thead>
+          <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Venda", "Anúncio", "Valores", "Nível", "O que conferir", ""].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3 font-normal">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-line">{list.map((r) => (
-            <tr key={r.key} data-quality-row={r.mlb ?? r.key} className="align-top">
-              <td className="px-4 py-3"><Thumbs items={r.images} /></td>
-              <td className="min-w-64 max-w-96 px-4 py-3"><p className="font-medium">{r.title}</p><p className="text-xs text-muted">{[r.mlb, r.variation, r.type === "premium" ? "Premium" : r.type === "classico" ? "Clássico" : null, r.priceCents != null ? formatBRL(r.priceCents) : null].filter(Boolean).join(" · ")}</p>{r.products && <p className="text-xs text-muted">{r.products}</p>}</td>
-              <td className="px-4 py-3"><SevBadge sev={r.severity} /></td>
-              <td className={`px-4 py-3 text-lg ${r.score >= 80 ? "text-success" : r.score >= 50 ? "text-warning" : "text-danger"}`}>{r.score}</td>
-              <td className="min-w-72 px-4 py-3">{r.issues.length ? <ul className="space-y-1">{r.issues.map((c) => (
-                <li key={c} className="text-xs"><span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${ISSUES[c].sev === "critico" ? "bg-danger" : ISSUES[c].sev === "aviso" ? "bg-warning" : "bg-ink/30"}`} aria-hidden /><b className="font-medium">{ISSUES[c].label}</b>
-                  {c === "preco_diferente" && r.lastSoldPriceCents != null && <span className="text-muted"> (cadastrado {formatBRL(r.priceCents ?? 0)}, vendido por {formatBRL(r.lastSoldPriceCents)})</span>}
-                  <span className="block pl-3.5 text-muted">{ISSUES[c].fix}</span></li>))}</ul> : <span className="text-xs text-success">Tudo preenchido.</span>}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-xs">{r.soldUnits} un.{r.salesWithoutCost > 0 && <div className="text-danger">{r.salesWithoutCost} sem custo</div>}</td>
-              <td className="px-4 py-3 text-right">{r.severity !== "ok" && <ListingButton label={r.listingId ? "Corrigir" : "Cadastrar"} variant="secondary" initial={r.init} variants={variants} />}</td>
+            <tr key={r.id} data-check-row={r.orderId} className="align-top">
+              <td className="whitespace-nowrap px-4 py-3"><p className="font-medium tabular-nums">{r.orderId}</p><p className="text-xs text-muted">{d(r.saleDate)} · {r.quantity} un.</p><p className="max-w-48 truncate text-xs text-muted" title={r.status}>{r.status}</p></td>
+              <td className="min-w-60 max-w-80 px-4 py-3"><p className="line-clamp-2">{r.title}</p><p className="text-xs text-muted">{[r.itemId, r.sku ? `SKU ${r.sku}` : null].filter(Boolean).join(" · ")}</p><p className={`text-xs ${r.listingId ? "text-muted" : "text-danger"}`}>{r.listingId ? "Anúncio cadastrado" : "Sem anúncio no cadastro"}</p></td>
+              <td className="whitespace-nowrap px-4 py-3 text-xs tabular-nums"><div className="grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5">
+                <span className="text-muted">Produto</span><span className="text-right">{formatBRL(r.productCents)}</span>
+                <span className="text-muted">Tarifas + envio</span><span className="text-right">−{formatBRL(r.feesCents)}</span>
+                <span className="text-muted">Total ML</span><span className="text-right">{r.netCents == null ? "—" : formatBRL(r.netCents)}{r.diffCents ? <span className={Math.abs(r.diffCents) >= 200 ? " text-danger" : " text-muted"}> ({r.diffCents > 0 ? "+" : ""}{formatBRL(r.diffCents)})</span> : null}</span>
+                <span className="text-muted">Custo</span><span className={`text-right ${r.costCents == null && !r.cancelled ? "text-danger" : ""}`}>{r.cancelled ? "—" : r.costCents == null ? "sem custo" : formatBRL(r.costCents)}</span>
+                <span className="text-muted">Lucro no sistema</span><span className="text-right">{r.cancelled ? "R$ 0 (cancelada)" : money(r.profitCents)}</span>
+              </div></td>
+              <td className="px-4 py-3"><LevelBadge level={r.level} cancelled={r.cancelled} /></td>
+              <td className="min-w-72 px-4 py-3">{r.issues.length ? <ul className="space-y-1.5">{r.issues.map((c) => (
+                <li key={c} className="text-xs"><span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${LEVEL_STYLE[SALE_ISSUES[c].level].dot}`} aria-hidden /><b className="font-medium">{SALE_ISSUES[c].label}</b>
+                  {c === "total_diferente" && r.diffCents != null && <span className="text-muted"> — o ML pagou {formatBRL(Math.abs(r.diffCents))} {r.diffCents < 0 ? "a menos" : "a mais"} que a soma das colunas</span>}
+                  {c === "cancelada_com_valor" && r.netCents != null && <span className="text-muted"> — ML lançou {formatBRL(r.netCents)}</span>}
+                  <span className="block pl-3.5 text-muted">{SALE_ISSUES[c].fix}</span></li>))}</ul> : <span className="text-xs text-success">{r.cancelled ? "Cancelada sem valor lançado — fora do faturamento." : "Tudo certo."}</span>}</td>
+              <td className="px-4 py-3 text-right">{r.init && (r.issues.includes("sem_anuncio") ? <ListingButton label="Cadastrar anúncio" variant="secondary" initial={r.init} variants={variants} /> : r.issues.some((c) => c === "sem_custo" || c === "sem_imposto" || c === "prejuizo") ? <ListingButton label="Abrir anúncio" variant="secondary" initial={r.init} variants={variants} /> : null)}</td>
             </tr>))}</tbody>
         </table>
-        {!list.length && <p className="p-8 text-center text-sm text-muted">Nenhum anúncio com esse filtro.</p>}
+        {!list.length && <p className="p-8 text-center text-sm text-muted">Nenhuma venda com esse filtro.</p>}
       </div>
-      <p className="mt-2 text-xs text-muted">“Sem custo do produto” se resolve no cadastro do produto (aba Produtos), não no anúncio. Depois de corrigir, as vendas já importadas passam a usar o custo ao reimportar a planilha de vendas ou ao salvar o anúncio.</p>
+      <p className="mt-2 text-xs text-muted">O lucro de cada venda usa as colunas da planilha (receita, tarifas, frete e reembolsos), o custo dos produtos do anúncio e o imposto/embalagem cadastrados no anúncio. Vendas canceladas ficam fora do faturamento.</p>
     </>
   );
 }
