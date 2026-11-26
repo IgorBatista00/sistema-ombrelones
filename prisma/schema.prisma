@@ -942,6 +942,11 @@ model Quote {
 
   category String? // categoria interna do pedido
 
+  // Markup da venda (uso interno, nunca impresso). Ao fechar, os percentuais são congelados em markupSnapshot
+  markupProfileId String?
+  markupProfile   MarkupProfile? @relation(fields: [markupProfileId], references: [id], onDelete: SetNull)
+  markupSnapshot  Json? // { name, cardFeeBps, …, idealMarginBps, minMarginBps } no momento do fechamento
+
   clientId String? // cliente do cadastro comercial (opcional)
   client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
@@ -1524,4 +1529,5 @@ model MarkupProfile {
   updatedAt        DateTime @updatedAt
 
   products Product[]
+  quotes   Quote[]
 }

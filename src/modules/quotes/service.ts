@@ -13,6 +13,8 @@ import { cancelSaleForQuote, syncSaleFromQuote } from "@/modules/finance/sales";
 import { cancelDeliveryForQuote, syncDeliveryFromQuote } from "@/modules/deliveries/service";
 import { docCode, nextDocNumber, parseDocNumber } from "@/lib/doc-code";
 import { clientToQuoteFields } from "@/modules/clients/service";
+import { PROFILE_SELECT } from "@/modules/pricing/profiles";
+import { snapshotOf } from "@/modules/finance/operation-rules";
 
 const money = z.union([z.string(), z.number()]).transform((v) => {
   if (typeof v === "number") return Math.round(v * 100);
@@ -30,6 +32,7 @@ export const quoteSchema = z.object({
   id: z.string().optional().nullable(),
   companyId: z.string().optional().nullable().transform((v) => v || null),
   category: z.string().trim().max(60).optional().nullable().transform((v) => v || null), // categoria interna do pedido
+  markupProfileId: z.string().max(40).optional().nullable().transform((v) => v || null), // markup da venda (resultado da operação)
   clientId: z.string().optional().nullable().transform((v) => v || null), // cliente do cadastro comercial
   client: z.object(Object.fromEntries(CLIENT_FIELDS.map((k) => [k, str(200)])) as Record<(typeof CLIENT_FIELDS)[number], ReturnType<typeof str>>)
     .refine((c) => c.name, "Informe o cliente."),
@@ -61,7 +64,7 @@ export const quoteSchema = z.object({
 export async function quoteProductOptions() {
   const variants = await db.productVariant.findMany({
     where: { isActive: true, product: { deletedAt: null } },
-    include: { stock: true, packages: true, product: { select: { name: true, code: true, color: true, description: true, measureUnit: true, heightMm: true, diameterMm: true, lengthMm: true, depthMm: true, weightG: true, frameMaterial: true, costFinalCents: true, images: { orderBy: { position: "asc" }, select: { url: true } }, packages: true } } },
+    include: { stock: true, packages: true, product: { select: { markupProfileId: true, name: true, code: true, color: true, description: true, measureUnit: true, heightMm: true, diameterMm: true, lengthMm: true, depthMm: true, weightG: true, frameMaterial: true, costFinalCents: true, images: { orderBy: { position: "asc" }, select: { url: true } }, packages: true } } },
     orderBy: { sku: "asc" },
   });
   const prices = await getUnitPrices(variants.map((v) => v.id));
@@ -77,7 +80,7 @@ export async function quoteProductOptions() {
       finish: [p.frameMaterial, v.color ?? p.color].filter(Boolean).join(" · ") || null, notes: p.description,
       priceCents: prices.get(v.id) ?? null, stockText: availabilityLabel(a),
       weightG: p.weightG ?? (pkgWeight || null), cubageM3: cubicMeters(pk) || null,
-      unitCostCents: v.stock?.avgCostCents ?? p.costFinalCents,
+      unitCostCents: v.stock?.avgCostCents ?? p.costFinalCents, markupProfileId: p.markupProfileId,
     };
   });
 }
@@ -111,7 +114,12 @@ export async function saveQuote(actorId: string, raw: unknown, generate: boolean
   const installmentValues = fixedValues.some((v) => v != null) ? fixedValues : null;
   const ip = installmentPlan(t.total, q.installmentPlan, q.issuedAt, installmentValues);
   if (status !== "RASCUNHO" && ip.diffCents !== 0) throw new AppError("VALIDATION", installmentError(ip.diffCents)!, 422);
+  const profile = q.markupProfileId ? await db.markupProfile.findUnique({ where: { id: q.markupProfileId }, select: PROFILE_SELECT }) : null;
+  if (q.markupProfileId && !profile) throw new AppError("VALIDATION", "O markup escolhido não existe mais. Escolha outro.", 422);
   const data = {
+    markupProfileId: profile?.id ?? null,
+    // venda já fechada: os percentuais do markup ficam congelados (reconfigurar o markup no orçamento atualiza o congelamento)
+    ...(status === "APROVADO" ? { markupSnapshot: profile ? (snapshotOf(profile) as Prisma.InputJsonValue) : Prisma.JsonNull } : {}),
     companyId: q.companyId, clientId, category: q.category, clientSnapshot: q.client as Prisma.InputJsonValue, commercialSnapshot: q.commercial as Prisma.InputJsonValue,
     issuedAt: q.issuedAt, validDays: q.validDays, deliveryDays: q.deliveryDays,
     paymentTerms: q.paymentTerms, installmentPlan: q.installmentPlan, installmentValues: installmentValues ?? Prisma.DbNull, notes: q.notes, deliveryNote: null, seller: q.commercial.seller || null,
@@ -153,7 +161,8 @@ export async function moveQuote(actorId: string, id: string, to: Stage, lostReas
   // Fechados ↔ Financeiro: fechar gera a venda e as parcelas; sair de Fechados cancela a venda (bloqueado se já houve recebimento).
   return db.$transaction(async (tx) => {
     if (q.status === "APROVADO") { await cancelSaleForQuote(tx, id); await cancelDeliveryForQuote(tx, id); }
-    const u = await tx.quote.update({ where: { id }, data: plan });
+    const profile = plan.status === "APROVADO" && q.markupProfileId ? await tx.markupProfile.findUnique({ where: { id: q.markupProfileId }, select: PROFILE_SELECT }) : null;
+    const u = await tx.quote.update({ where: { id }, data: { ...plan, ...(plan.status === "APROVADO" ? { markupSnapshot: profile ? (snapshotOf(profile) as Prisma.InputJsonValue) : Prisma.JsonNull } : {}) } });
     if (plan.status === "APROVADO") { await syncSaleFromQuote(tx, id); await syncDeliveryFromQuote(tx, id); }
     await tx.auditLog.create({ data: { actorId, action: `quote.move.${to}`, entity: "Quote", entityId: id, before: { status: q.status, closedAt: q.closedAt }, after: { status: plan.status, closedAt: plan.closedAt, lostReason: plan.lostReason } } });
     return u;
@@ -177,7 +186,7 @@ export async function duplicateQuote(actorId: string, id: string) {
   });
   if (!items.length) throw new AppError("INVALID", "Nenhum produto do orçamento original está ativo.", 409);
   return saveQuote(actorId, {
-    companyId: src.companyId, clientId: src.clientId, category: src.category, client: src.clientSnapshot, commercial: src.commercialSnapshot ?? {}, issuedAt: new Date(), validDays: src.validDays,
+    companyId: src.companyId, clientId: src.clientId, category: src.category, markupProfileId: src.markupProfileId, client: src.clientSnapshot, commercial: src.commercialSnapshot ?? {}, issuedAt: new Date(), validDays: src.validDays,
     deliveryDays: src.deliveryDays, paymentTerms: src.paymentTerms, installmentPlan: src.installmentPlan, installmentValues: src.installmentValues ?? Prisma.DbNull, notes: src.notes,
     freightTerm: src.freightTerm, freight: src.freightCents / 100, extraDiscount: src.extraDiscountCents / 100, items,
   }, false);

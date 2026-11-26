@@ -6,25 +6,28 @@ import { getDashboardMetrics } from "@/modules/admin/metrics";
 import { financeDashboard } from "@/modules/finance/queries";
 import { formatBRL } from "@/lib/money";
 import { PageHead, Stat, Table, Td } from "@/components/admin/ui";
+import { operationResult, resultFilterSchema } from "@/modules/finance/operation-result";
+import { OperationResult } from "@/components/admin/operation-result";
 
 const RANGES = { "7": "7 dias", "30": "30 dias", "90": "90 dias" } as const;
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ dias?: string }> }) {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ dias?: string; rde?: string; rate?: string }> }) {
   const v = await getViewer();
   if (v.admin && !v.admin.permissions.includes("DASHBOARD")) redirect(homeFor(v.admin.permissions)); // quem não tem Dashboard cai na primeira área liberada
   const { admin } = await requireAdminPage("DASHBOARD");
   const canFinance = admin.permissions.includes("FINANCE"); // valores financeiros só para quem tem acesso ao Financeiro
-  const dias = (await searchParams).dias ?? "30";
+  const sp = await searchParams;
+  const dias = sp.dias ?? "30";
   const days = dias in RANGES ? Number(dias) : 30;
   const to = new Date();
   const from = new Date(to.getTime() - days * 86_400_000);
-  const [m, fin] = await Promise.all([getDashboardMetrics(from, to), canFinance ? financeDashboard(from, to) : null]);
+  const [m, fin, res] = await Promise.all([getDashboardMetrics(from, to), canFinance ? financeDashboard(from, to) : null, canFinance ? operationResult(resultFilterSchema.parse(sp)) : null]);
   const d = (x: Date | null) => (x ? x.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—");
 
   return (
     <>
       <PageHead title="Dashboard" subtitle={`Últimos ${days} dias · faturamento considera apenas pedidos com pagamento confirmado`}
-        action={<div className="flex gap-1 text-sm">{Object.entries(RANGES).map(([k, l]) => <Link key={k} href={`/admin?dias=${k}`} className={`rounded px-3 py-1.5 ${String(days) === k ? "bg-ink text-canvas" : "hover:bg-ink/5"}`}>{l}</Link>)}</div>} />
+        action={<div className="flex gap-1 text-sm">{Object.entries(RANGES).map(([k, l]) => <Link key={k} href={`/admin?dias=${k}${sp.rde ? `&rde=${sp.rde}` : ""}${sp.rate ? `&rate=${sp.rate}` : ""}`} className={`rounded px-3 py-1.5 ${String(days) === k ? "bg-ink text-canvas" : "hover:bg-ink/5"}`}>{l}</Link>)}</div>} />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Faturamento (pago)" value={formatBRL(m.revenueCents)} />
         <Stat label="Ticket médio" value={formatBRL(m.avgTicketCents)} hint="Sobre pedidos pagos" />
@@ -36,6 +39,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <Link href="/admin/logistica"><Stat label="Cotações de frete pendentes" value={m.quoteRequests} /></Link>
         <Link href="/admin/pedidos?logistico=NOT_RELEASED&financeiro=PAID"><Stat label="Aguardando expedição" value={m.awaitingShipment} /></Link>
       </div>
+      {res && <OperationResult r={res} keep={{ dias: sp.dias }} />}
       {fin && (
         <section aria-labelledby="dash-fin" className="mt-10">
           <div className="mb-3 flex items-baseline justify-between gap-4">

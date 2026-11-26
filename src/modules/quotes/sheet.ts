@@ -9,7 +9,7 @@ export interface SheetItem {
   quantity: string; unitPrice: string; unitDiscount: string; unitCostCents: number | null; weightG: number | null; cubageM3: number | null;
 }
 export interface SheetData {
-  id: string | null; code: string | null; status: keyof typeof STATUS_LABEL; companyId: string; clientId: string; category: string; client: ClientData; commercial: CommercialData;
+  id: string | null; code: string | null; status: keyof typeof STATUS_LABEL; companyId: string; clientId: string; category: string; markupProfileId: string; client: ClientData; commercial: CommercialData;
   issuedAt: string; validDays: number; deliveryDays: string; orderNumber: string; paymentTerms: string; installmentPlan: string; installmentValues: (number | null)[]; notes: string;
   freightTerm: "COTAR" | "CIF" | "FOB"; freight: string; extraDiscount: string; items: SheetItem[];
 }

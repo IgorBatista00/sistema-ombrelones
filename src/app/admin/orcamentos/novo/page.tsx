@@ -4,6 +4,7 @@ import { clientOptions, quoteProductOptions } from "@/modules/quotes/service";
 import { companyHeader, newSheet } from "@/modules/quotes/sheet-data";
 import { getOrderCategories } from "@/modules/quotes/categories";
 import { QuoteEditor } from "@/components/admin/quote-editor";
+import { listProfiles } from "@/modules/pricing/profiles";
 import { OrderCategoriesButton } from "@/components/admin/order-categories";
 import { PageHead } from "@/components/admin/ui";
 
@@ -31,5 +32,5 @@ export default async function NewQuote({ searchParams }: { searchParams: Promise
     );
   }
   const [products, clients, company] = await Promise.all([quoteProductOptions(), clientOptions(), companyHeader()]);
-  return <QuoteEditor products={products} clients={clients} company={company} categories={categories} initial={newSheet(user.name, chosen)} />;
+  return <QuoteEditor profiles={await listProfiles()} products={products} clients={clients} company={company} categories={categories} initial={newSheet(user.name, chosen)} />;
 }

@@ -13,7 +13,7 @@ export async function companyHeader(): Promise<CompanyHeader> {
 const today = () => new Date().toISOString().slice(0, 10);
 export function newSheet(sellerName: string, category = ""): SheetData {
   return {
-    id: null, code: null, status: "RASCUNHO", companyId: "", clientId: "", category, client: { ...EMPTY_CLIENT },
+    id: null, code: null, status: "RASCUNHO", companyId: "", clientId: "", category, markupProfileId: "", client: { ...EMPTY_CLIENT },
     commercial: { professional: "", seller: sellerName, manager: "", mobile: "", email: "" },
     issuedAt: today(), validDays: 15, deliveryDays: "", orderNumber: "", paymentTerms: PAY_METHODS[0].label, installmentPlan: PAY_METHODS[0].plan, installmentValues: [],
     notes: "", freightTerm: "FOB", freight: "", extraDiscount: "", items: [emptyItem()],
@@ -26,7 +26,7 @@ export async function loadSheet(id: string, products: Pick<QuoteProductOption, "
   if (!q) return null;
   const com = (q.commercialSnapshot ?? {}) as Partial<CommercialData>;
   return {
-    id: q.id, code: q.code, status: q.status, companyId: q.companyId ?? "", clientId: q.clientId ?? "", category: q.category ?? "",
+    id: q.id, code: q.code, status: q.status, companyId: q.companyId ?? "", clientId: q.clientId ?? "", category: q.category ?? "", markupProfileId: q.markupProfileId ?? "",
     client: { ...EMPTY_CLIENT, ...(q.clientSnapshot as Record<string, string>) },
     commercial: { professional: "", seller: q.seller ?? "", manager: "", mobile: "", email: "", ...com },
     issuedAt: q.issuedAt.toISOString().slice(0, 10), validDays: q.validDays, deliveryDays: q.deliveryDays == null ? "" : String(q.deliveryDays),
