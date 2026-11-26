@@ -12,7 +12,19 @@ export const tableFilterSchema = z.object({
   categoria: z.string().optional().catch(undefined),
   situacao: z.enum(["sem_custo", "sem_markup", "abaixo_custo", "abaixo_minimo", "desatualizado", "ok"]).optional().catch(undefined),
   arquivados: z.literal("1").optional().catch(undefined),
+  ordem: z.enum(["codigo", "produto", "linha", "preco", "custo"]).optional().catch(undefined),
 });
+export const ORDER_LABEL = { codigo: "Código", produto: "Produto e medida", linha: "Categoria, produto e medida", preco: "Preço calculado (menor → maior)", custo: "Custo final (menor → maior)" } as const;
+
+/** Chave de ordenação natural: números (com vírgula) viram números, então 2,00 < 2,40 < 2,70 < 3,00 e 3,5 = 3,50. */
+const collator = new Intl.Collator("pt-BR", { sensitivity: "base" });
+export function naturalKey(text: string) {
+  return text.toLowerCase().replace(/\d+(?:[.,]\d+)?/g, (n) => {
+    const v = Number(n.replace(",", "."));
+    return Number.isFinite(v) ? v.toFixed(3).padStart(14, "0") : n;
+  });
+}
+export const compareNatural = (a: string, b: string) => collator.compare(naturalKey(a), naturalKey(b));
 export type TableFilters = z.infer<typeof tableFilterSchema>;
 
 /** Todos os produtos com foto, descrição, custo final, markup, preço calculado e preço atual do site. */
@@ -38,6 +50,7 @@ export async function priceTable(f: TableFilters) {
       diffCents: calc != null && sitePriceCents != null ? calc - sitePriceCents : null, state,
     };
   }).filter((r) => !f.situacao || r.state === f.situacao);
+  sortRows(rows, f.ordem);
   const count = (s: PricingState) => rows.filter((r) => r.state === s).length;
   return { rows, categories, profiles, counts: { total: rows.length, sem_custo: count("sem_custo"), sem_markup: count("sem_markup"), abaixo_custo: count("abaixo_custo"), abaixo_minimo: count("abaixo_minimo"), desatualizado: count("desatualizado"), ok: count("ok") } };
 }
@@ -86,4 +99,18 @@ export async function applyCalculatedPrices(actorId: string, productIds: string[
     }
     return { applied, skipped };
   });
+}
+
+type Sortable = { code: string | null; name: string; category: string; calcCents: number | null; costCents: number | null };
+export function sortRows<T extends Sortable>(rows: T[], ordem?: TableFilters["ordem"]) {
+  const byName = (a: T, b: T) => compareNatural(a.name, b.name) || compareNatural(a.code ?? "", b.code ?? "");
+  const num = (x: number | null) => (x == null ? Number.POSITIVE_INFINITY : x);
+  const cmp: Record<string, (a: T, b: T) => number> = {
+    produto: byName,
+    linha: (a, b) => collator.compare(a.category, b.category) || byName(a, b),
+    preco: (a, b) => num(a.calcCents) - num(b.calcCents) || byName(a, b),
+    custo: (a, b) => num(a.costCents) - num(b.costCents) || byName(a, b),
+  };
+  if (ordem && cmp[ordem]) rows.sort(cmp[ordem]);
+  return rows;
 }
