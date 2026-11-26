@@ -3,7 +3,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFP
 import { formatBRL } from "@/lib/money";
 
 export type PdfRow = { code: string | null; name: string; category: string; description: string | null; image: string | null; costCents: number | null; profileName: string | null; markupText: string | null; calcCents: number | null; minCents: number | null; marginBps: number | null; sitePriceCents: number | null; stateLabel: string };
-export type PdfOptions = { mode: "clientes" | "interna"; photos: boolean; brand: string; subtitle: string; generatedAt: Date; fetchImage?: (url: string) => Promise<Uint8Array | null> };
+export type PdfOptions = { mode: "clientes" | "interna"; photos: boolean; brand: string; subtitle: string; generatedAt: Date; emptyHint?: string; footNote?: string; fetchImage?: (url: string) => Promise<Uint8Array | null> };
 
 const INK = rgb(0.12, 0.14, 0.13), MUTED = rgb(0.45, 0.45, 0.43), LINE = rgb(0.86, 0.85, 0.82), ZEBRA = rgb(0.975, 0.97, 0.96);
 const brDate = (d: Date) => new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
@@ -121,7 +121,13 @@ export async function buildPriceTablePdf(rows: PdfRow[], o: PdfOptions) {
     }
     y -= rowH;
   });
-  if (!rows.length) page.drawText("Nenhum produto com os filtros escolhidos.", { x: M, y: y - 20, size: 9, font, color: MUTED });
+  if (!rows.length) {
+    page.drawText(safe("Nenhum produto para listar.", bold), { x: M, y: y - 22, size: 10, font: bold, color: INK });
+    wrap(o.emptyHint ?? "Nenhum produto com os filtros escolhidos.", font, 9, inner).forEach((ln, i) => page.drawText(ln, { x: M, y: y - 40 - i * 13, size: 9, font, color: MUTED }));
+  } else if (o.footNote) {
+    if (y - 20 < M + 24) newPage();
+    page.drawText(safe(o.footNote, font), { x: M, y: y - 16, size: 8, font, color: MUTED });
+  }
 
   pages.forEach((p, i) => {
     const t = `Página ${i + 1} de ${pages.length}`;
