@@ -78,6 +78,12 @@ export async function saveListing(actorId: string, id: string | null, raw: unkno
     return await db.$transaction(async (tx) => {
       const exists = f.components.length ? await tx.productVariant.count({ where: { id: { in: f.components.map((c) => c.variantId) } } }) : 0;
       if (exists !== f.components.length) throw new AppError("VALIDATION", "Um dos produtos escolhidos não existe mais. Atualize a página.", 422);
+      // produtos do anúncio mudaram: o custo guardado nas vendas dele estava errado → recalcula com os produtos novos
+      if (id) {
+        const before = await tx.mlListingComponent.findMany({ where: { listingId: id }, select: { variantId: true, quantity: true } });
+        const key = (xs: { variantId: string; quantity: number }[]) => xs.map((c) => `${c.variantId}×${c.quantity}`).sort().join(",");
+        if (key(before) !== key(f.components)) await tx.mlOrderItem.updateMany({ where: { listingId: id }, data: { costCents: null } });
+      }
       const l = id
         ? await tx.mlListing.update({ where: { id }, data })
         : await tx.mlListing.create({ data: { ...data, createdById: actorId } });
@@ -235,7 +241,8 @@ export async function ordersIn(where: Prisma.MlOrderItemWhereInput) {
     const lines = its.map((i) => {
       const unitCost = i.costCents != null ? i.costCents / i.quantity : null;
       const p = lineProfit(soldLineOf(i, cancelledOf(i.orderStatus)), i.listing, unitCost);
-      return { id: i.id, itemId: i.itemId, title: i.title, variation: i.variation, sku: i.sku, quantity: i.quantity, listingId: i.listingId, listingTitle: i.listing?.title ?? null, mto: false, ...p };
+      const productCents = cancelledOf(i.orderStatus) ? 0 : i.productCents ?? i.unitPriceCents * i.quantity;
+      return { id: i.id, itemId: i.itemId, title: i.title, variation: i.variation, sku: i.sku, quantity: i.quantity, listingId: i.listingId, listingTitle: i.listing?.title ?? null, mto: false, ...p, productCents };
     });
     const sum = (k: "revenue" | "fees" | "shipping" | "cost" | "extras" | "tax" | "profit") => lines.reduce((a, l) => a + l[k], 0);
     const c = ctrl.get(orderId);
@@ -352,7 +359,7 @@ export async function mlProfitByListing(f: MlFilter) {
     for (const l of r.lines) {
       const key = l.listingId ?? `sem:${l.itemId}`;
       const m = map.get(key) ?? { listingId: l.listingId, title: l.listingTitle ?? `${l.title} (sem cadastro)`, units: 0, orders: 0, product: 0, fees: 0, cost: 0, extras: 0, profit: 0, estimated: false, costMissing: false };
-      m.units += l.quantity; m.orders++; m.product += l.revenue; m.fees += l.fees + l.shipping; m.cost += l.cost; m.extras += l.extras + l.tax; m.profit += l.profit;
+      m.units += l.quantity; m.orders++; m.product += l.productCents; m.fees += l.fees + l.shipping; m.cost += l.cost; m.extras += l.extras + l.tax; m.profit += l.profit;
       m.estimated ||= l.feesEstimated; m.costMissing ||= l.costMissing;
       map.set(key, m);
     }

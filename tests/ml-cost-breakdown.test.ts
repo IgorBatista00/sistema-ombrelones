@@ -56,3 +56,40 @@ describe("planilha do ML: demais colunas de valor", () => {
     expect(r.shippingFeeCents).toBe(4500);
   });
 });
+
+import { allocatePackShipping, shipStage, soldLineOf } from "@/modules/mercadolivre/rules";
+describe("auditoria: frete de pacote e situação de envio", () => {
+  it("rateia o frete do pacote pela receita; soma igual ao lançado", () => {
+    const a = allocatePackShipping([
+      { key: "a", group: "ana|2026-10-26", productCents: 38236, shippingFeeCents: 12980 },
+      { key: "b", group: "ana|2026-10-26", productCents: 104118, shippingFeeCents: null },
+      { key: "c", group: null, productCents: 40000, shippingFeeCents: 4525 },
+      { key: "d", group: "bia|2026-10-27", productCents: 40000, shippingFeeCents: 4525 },
+    ]);
+    expect(a.get("a")! + a.get("b")!).toBe(12980);
+    expect(a.get("a")).toBe(Math.round((12980 * 38236) / 142354));
+    expect(a.get("c")).toBeNull();
+    expect(a.get("d")).toBeNull(); // pacote com uma venda só: sem rateio
+    const line = soldLineOf({ quantity: 1, productCents: 38236, unitPriceCents: 38236, shippingRevenueCents: null, saleFeeTotalCents: 5162, saleFeeCents: null, shippingFeeCents: 12980, shipAllocCents: a.get("a"), refundCents: null, netCents: 20094 }, false);
+    expect(line.shippingFeeCents).toBe(a.get("a"));
+  });
+  it("situação de envio da planilha real", () => {
+    expect(shipStage("Pronto para coleta — Você deve entregar o pacote à coleta que passará hoje", false)).toBe("a_enviar");
+    expect(shipStage("Envio pendente — Entre em contato com o seu comprador para entregar o produto.", false)).toBe("a_enviar");
+    expect(shipStage("Combine a entrega — Entre em contato com o seu comprador", false)).toBe("a_enviar");
+    expect(shipStage("Para entregar na coleta do dia 9 de dezembro — Para organizar os envios, você poderá imprimir a etiqueta", false)).toBe("a_enviar");
+    expect(shipStage("Reclamação encerrada — Encerramos a reclamação da venda e liberamos o dinheiro para você.", false)).toBe("entregue");
+    expect(shipStage("Venda entregue — Encerramos a reclamação da venda e liberamos o dinheiro para você.", false)).toBe("entregue");
+    expect(shipStage("Reclamação encerrada. Devolvemos o dinheiro — Você pode vê-lo na sua conta Mercado Pago.", false)).toBe("entregue");
+    expect(shipStage("Reclamação aberta — O comprador abriu uma reclamação", false)).toBe("problema");
+    expect(shipStage("A caminho — Chega entre os dias 23 e 25", false)).toBe("enviada");
+    expect(shipStage("Entregue — Chegou em 10 de outubro", false)).toBe("entregue");
+  });
+});
+
+describe("auditoria: linha vendida leva todos os campos", () => {
+  it("reembolso, bônus, demais colunas e cancelamento chegam ao cálculo", () => {
+    const l = soldLineOf({ quantity: 1, productCents: 40000, unitPriceCents: 40000, shippingRevenueCents: 100, saleFeeTotalCents: 4200, saleFeeCents: null, shippingFeeCents: 4500, shipAllocCents: 3000, refundCents: 700, netCents: 1, bonusCents: 122, otherLines: [{ label: "x", cents: -50 }] }, true);
+    expect(l).toEqual({ quantity: 1, productCents: 40000, shippingRevenueCents: 100, saleFeeTotalCents: 4200, shippingFeeCents: 3000, refundCents: 700, bonusCents: 122, otherCents: -50, cancelled: true });
+  });
+});

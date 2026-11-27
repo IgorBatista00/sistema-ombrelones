@@ -19,11 +19,13 @@ const n = (t: string) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""
 export function shipStage(statusText: string | null | undefined, cancelled: boolean, shippedAt?: Date | null): ShipStage {
   if (cancelled) return "cancelada";
   const t = n(statusText ?? "");
+  // reclamação/mediação já encerrada sem devolução (dinheiro liberado para o vendedor) = venda concluída
+  if (/reclamacao encerrada|encerramos a reclamacao|mediacao finalizada|liberamos o dinheiro/.test(t)) return "entregue";
   if (/reclama|mediac|devolu|nao entregue|extravi|retid|problema|atrasad/.test(t)) return "problema";
   if (/entregue|recebid|concluid/.test(t)) return "entregue";
   if (/a caminho|enviad|em transito|despachad|coletad|em rota|saiu para/.test(t)) return "enviada";
   if (shippedAt) return "enviada";
-  if (/pronto para enviar|etiqueta|imprimir|preparar|preparando|aguardando (envio|coleta|despacho|postagem)|para despachar|programad|pendente de envio|enviar/.test(t)) return "a_enviar";
+  if (/pronto para (enviar|coleta)|para entregar na coleta|coleta|envio pendente|combine a entrega|etiqueta|imprimir|preparar|preparando|aguardando (envio|coleta|despacho|postagem)|para despachar|programad|pendente de envio|enviar/.test(t)) return "a_enviar";
   return "outra";
 }
 
@@ -78,12 +80,38 @@ export function otherLinesOf(v: unknown): { label: string; cents: number }[] {
 }
 
 /** Linha vendida a partir do item importado. Na planilha (com "Total"), coluna de envio em branco = R$ 0 — não estima pelo anúncio. */
-export function soldLineOf(i: { quantity: number; productCents: number | null; unitPriceCents: number; shippingRevenueCents: number | null; saleFeeTotalCents: number | null; saleFeeCents: number | null; shippingFeeCents: number | null; refundCents: number | null; netCents: number | null; bonusCents?: number | null; otherLines?: unknown }, cancelled: boolean): SoldLine {
+export function soldLineOf(i: { quantity: number; productCents: number | null; unitPriceCents: number; shippingRevenueCents: number | null; saleFeeTotalCents: number | null; saleFeeCents: number | null; shippingFeeCents: number | null; refundCents: number | null; netCents: number | null; bonusCents?: number | null; otherLines?: unknown; shipAllocCents?: number | null }, cancelled: boolean): SoldLine {
   return {
     quantity: i.quantity, productCents: i.productCents ?? i.unitPriceCents * i.quantity, shippingRevenueCents: i.shippingRevenueCents,
     saleFeeTotalCents: i.saleFeeTotalCents ?? (i.saleFeeCents != null ? i.saleFeeCents * i.quantity : null),
-    shippingFeeCents: i.shippingFeeCents ?? (i.netCents != null ? 0 : null), refundCents: i.refundCents, bonusCents: i.bonusCents ?? null, otherCents: otherLinesOf(i.otherLines).reduce((a, x) => a + x.cents, 0) || null, cancelled,
+    // frete: o rateado do pacote, quando houver
+    shippingFeeCents: i.shipAllocCents ?? i.shippingFeeCents ?? (i.netCents != null ? 0 : null), refundCents: i.refundCents, bonusCents: i.bonusCents ?? null, otherCents: otherLinesOf(i.otherLines).reduce((a, x) => a + x.cents, 0) || null, cancelled,
   };
+}
+
+/**
+ * Frete de pacote: o ML lança o frete do pacote numa venda só (as outras vêm sem frete).
+ * Vendas do mesmo pacote = mesmo comprador, mesmo dia e "Pacote de diversos produtos = Sim" (canceladas ficam fora).
+ * O frete total do grupo é rateado pela receita de cada venda; a soma rateada é exatamente o frete lançado.
+ */
+export function allocatePackShipping<T extends { key: string; group: string | null; productCents: number; shippingFeeCents: number | null }>(rows: T[]) {
+  const out = new Map<string, number | null>();
+  const groups = new Map<string, T[]>();
+  for (const r of rows) {
+    if (!r.group) { out.set(r.key, null); continue; }
+    groups.set(r.group, [...(groups.get(r.group) ?? []), r]);
+  }
+  for (const g of groups.values()) {
+    if (g.length < 2) { for (const r of g) out.set(r.key, null); continue; }
+    const freight = g.reduce((a, r) => a + (r.shippingFeeCents ?? 0), 0);
+    const base = g.reduce((a, r) => a + Math.max(0, r.productCents), 0);
+    let left = freight;
+    g.forEach((r, i) => {
+      const v = i === g.length - 1 ? left : base ? Math.round((freight * Math.max(0, r.productCents)) / base) : Math.round(freight / g.length);
+      left -= v; out.set(r.key, v);
+    });
+  }
+  return out;
 }
 
 /** Simulação no cadastro do anúncio: quanto sobra por unidade vendida ao preço informado. */

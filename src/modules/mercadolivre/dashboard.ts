@@ -66,16 +66,16 @@ export async function mlDashboard(f: MlFilter) {
     const li = l.listingId ? lmap.get(l.listingId) : null;
     const key = li?.id ?? `sem:${l.itemId}`;
     const a = byListing.get(key) ?? { ...agg(), id: key, title: li?.title ?? l.title, mlb: li?.mlItemId ?? l.itemId, type: li?.listingType ?? null, images: li ? li.components.map(imgOf).filter(Boolean) as string[] : [] };
-    a.revenue += l.revenue; a.profit += l.profit; a.units += l.quantity; a.orders++; a.cost += l.cost; a.fees += l.fees + l.shipping; a.costMissing ||= l.costMissing;
+    a.revenue += l.productCents; a.profit += l.profit; a.units += l.quantity; a.orders++; a.cost += l.cost; a.fees += l.fees + l.shipping; a.costMissing ||= l.costMissing;
     byListing.set(key, a);
     const t = byType[(li?.listingType as "classico" | "premium") ?? "outro"] ?? byType.outro;
-    t.revenue += l.revenue; t.profit += l.profit; t.units += l.quantity; t.orders++; t.fees += l.fees + l.shipping; t.costMissing ||= l.costMissing;
+    t.revenue += l.productCents; t.profit += l.profit; t.units += l.quantity; t.orders++; t.fees += l.fees + l.shipping; t.costMissing ||= l.costMissing;
     if (li?.components.length) {
       const totalQ = li.components.reduce((s, c) => s + c.quantity, 0);
       for (const c of li.components) { // kit: divide receita e lucro pela quantidade de peças
         const share = c.quantity / totalQ;
         const p = byProduct.get(c.variantId) ?? { ...agg(), id: c.variantId, name: c.variant.product.name, sku: c.variant.sku, image: imgOf(c) };
-        p.revenue += Math.round(l.revenue * share); p.profit += Math.round(l.profit * share); p.units += l.quantity * c.quantity; p.orders++; p.costMissing ||= l.costMissing;
+        p.revenue += Math.round(l.productCents * share); p.profit += Math.round(l.profit * share); p.units += l.quantity * c.quantity; p.orders++; p.costMissing ||= l.costMissing;
         byProduct.set(c.variantId, p);
       }
     }
@@ -83,7 +83,7 @@ export async function mlDashboard(f: MlFilter) {
   // detalhamento de receitas e custos (todas as colunas de valor da planilha + custos do cadastro)
   const items = await db.mlOrderItem.findMany({
     where: { saleDate: range(de, ate) },
-    select: { quantity: true, productCents: true, unitPriceCents: true, shippingRevenueCents: true, saleFeeTotalCents: true, saleFeeCents: true, shippingFeeCents: true, refundCents: true, netCents: true, bonusCents: true, otherLines: true, costCents: true, orderStatus: true,
+    select: { quantity: true, productCents: true, unitPriceCents: true, shippingRevenueCents: true, saleFeeTotalCents: true, saleFeeCents: true, shippingFeeCents: true, shipAllocCents: true, inPack: true, refundCents: true, netCents: true, bonusCents: true, otherLines: true, costCents: true, orderStatus: true,
       listing: { select: { saleFeeBps: true, fixedFeeCents: true, shippingCostCents: true, packagingCents: true, taxBps: true, otherCostCents: true } } },
   });
   const breakdown = costBreakdown(items.map((i) => ({ ...i, cancelled: i.orderStatus === "cancelled" })));

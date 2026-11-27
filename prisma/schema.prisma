@@ -1253,6 +1253,7 @@ model MlOrderItem {
   costCents            Int? // custo dos produtos vinculados (snapshot ao vincular/importar)
   inPack               Boolean? // "Pacote de diversos produtos" = Sim (o frete vem numa das vendas do pacote); null = importada antes
   bonusCents           Int? // "Descontos e bônus" (crédito do ML, com sinal)
+  shipAllocCents       Int? // frete do pacote rateado pela receita entre as vendas do mesmo pacote (usado no lucro); null = sem rateio
   otherLines           Json? // demais colunas de valor da planilha: [{ label, cents }] com sinal (+ crédito, − custo)
 
   listing MlListing? @relation(fields: [listingId], references: [id], onDelete: SetNull)

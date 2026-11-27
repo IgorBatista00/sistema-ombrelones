@@ -208,7 +208,7 @@ function CashCard({ d }: { d: MlDashboard }) {
         <div>
           <p className="label">Aumento do caixa</p>
           <p className={`mt-2 text-4xl ${c.increase < 0 ? "text-danger" : "text-success"}`} data-cash-value>{formatBRL(c.increase)}</p>
-          <p className="mt-2 text-xs text-muted">{br(d.de)} a {br(d.ate)} · o que o Mercado Livre repassou menos o imposto pago em guia. O custo da mercadoria não entra aqui: ele saiu do caixa na compra, não na venda.</p>
+          <p className="mt-2 text-xs text-muted">{br(d.de)} a {br(d.ate)} · o que o Mercado Livre repassou menos o imposto pago em guia. O custo da mercadoria não entra aqui: ele saiu do caixa na compra, não na venda. Conta pela data da venda: inclui valores que o ML só libera depois da entrega.</p>
         </div>
         <div className="text-sm">
           {line(<>Recebido do Mercado Livre <span className="text-xs text-muted">(coluna Total: já sem tarifa, frete e reembolsos)</span></>, `+${formatBRL(c.mlReceived)}`)}

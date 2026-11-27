@@ -5,6 +5,8 @@ import { AppError } from "@/lib/errors";
 import { readMatrix } from "@/modules/products/excel";
 import { extraMoneyCols, findHeader, parseMlRow, type MlSheetRow } from "./sheet-rules";
 import { applyMlStock, relinkItems } from "@/modules/mercadolivre/service";
+import { allocatePackShipping } from "@/modules/mercadolivre/rules";
+import { spDay } from "@/modules/purchase-orders/rules";
 
 /** Recebimentos vindos de planilha usam este prefixo no paymentId (a integração direta usa o id real do pagamento). */
 export const SHEET_PREFIX = "PLAN-";
@@ -70,6 +72,10 @@ export async function commitMlSheet(actorId: string, buf: Buffer, filename: stri
   const { orders, staleSummaries } = await analyze(buf, filename);
   const todo = orders.filter((o) => o.action !== "ignorar");
   if (!todo.length) throw new AppError("NOTHING", "Nenhuma venda para importar (todas já vieram pela integração ou a planilha só tem erros).", 422);
+  const alloc = allocatePackShipping(todo.flatMap((o) => o.rows.map((r) => ({
+    key: `${r.orderId}|${r.line}`, productCents: r.productCents, shippingFeeCents: r.shippingFeeCents,
+    group: r.inPack && !r.cancelled && r.buyer ? `${r.buyer.toLowerCase()}|${spDay(r.saleDate)}` : null,
+  }))));
   let stock = { moved: 0, negative: [] as string[] };
   await db.$transaction(async (tx) => {
     if (staleSummaries.length) { // resumo de pacote gravado como venda por engano: devolve estoque (se baixou) e apaga
@@ -94,7 +100,7 @@ export async function commitMlSheet(actorId: string, buf: Buffer, filename: stri
         orderId: o.orderId, position: i, itemId: r.itemId ?? r.sku ?? "PLANILHA", title: r.title, categoryId: null, quantity: r.quantity, unitPriceCents: r.unitPriceCents,
         saleFeeCents: r.saleFeeCents != null ? Math.round(r.saleFeeCents / r.quantity) : null, orderStatus: r.cancelled ? "cancelled" : "paid", saleDate: r.saleDate,
         sku: r.sku, variation: r.variation, productCents: r.productCents, shippingRevenueCents: r.shippingCents, saleFeeTotalCents: r.saleFeeCents, shippingFeeCents: r.shippingFeeCents,
-        refundCents: r.refundCents, netCents: r.totalCents, inPack: r.inPack, bonusCents: r.bonusCents, otherLines: r.otherLines.length ? (r.otherLines as Prisma.InputJsonValue) : Prisma.DbNull, statusText: r.status.slice(0, 200), shipBy: r.shipBy,
+        refundCents: r.refundCents, netCents: r.totalCents, inPack: r.inPack, shipAllocCents: alloc.get(`${r.orderId}|${r.line}`) ?? null, bonusCents: r.bonusCents, otherLines: r.otherLines.length ? (r.otherLines as Prisma.InputJsonValue) : Prisma.DbNull, statusText: r.status.slice(0, 200), shipBy: r.shipBy,
         costCents: prev.get(`${r.itemId ?? r.sku ?? "PLANILHA"}|${r.variation ?? ""}|${r.quantity}`) ?? null,
       })) });
     }

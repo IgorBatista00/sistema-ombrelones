@@ -4,7 +4,7 @@ import { columnsNet } from "./sale-check-rules";
 
 export type BreakdownItem = {
   quantity: number; productCents: number | null; unitPriceCents: number; shippingRevenueCents: number | null; saleFeeTotalCents: number | null; saleFeeCents: number | null;
-  shippingFeeCents: number | null; refundCents: number | null; netCents: number | null; bonusCents: number | null; otherLines: unknown; costCents: number | null;
+  shippingFeeCents: number | null; shipAllocCents?: number | null; refundCents: number | null; netCents: number | null; bonusCents: number | null; otherLines: unknown; costCents: number | null; inPack?: boolean | null;
   cancelled: boolean; listing: (ListingCosts & { packagingCents?: number | null; otherCostCents?: number | null }) | null;
 };
 export type BreakdownLine = { key: string; label: string; cents: number; hint?: string; source: "planilha" | "cadastro" };
@@ -34,7 +34,7 @@ export function costBreakdown(items: BreakdownItem[]) {
     profit += p.profit; product += line.productCents;
     const q = i.quantity;
     if (line.saleFeeTotalCents == null) miss.tarifa++;
-    if (!p.shipping) miss.frete++;
+    if (!p.shipping && !i.inPack) miss.frete++;
     if (i.listing && !i.listing.taxBps) miss.imposto++;
     if (i.costCents == null) miss.mercadoria++;
     add("produtos", "Receita por produtos", line.productCents, "planilha");
@@ -51,7 +51,7 @@ export function costBreakdown(items: BreakdownItem[]) {
     add("outros", "Outros custos do anúncio", -((i.listing?.otherCostCents ?? 0) * q), "cadastro");
     if (i.netCents != null) {
       withNet++;
-      const cols = line.productCents + (line.shippingRevenueCents ?? 0) + (line.bonusCents ?? 0) + (line.otherCents ?? 0) - (line.saleFeeTotalCents ?? 0) - (line.shippingFeeCents ?? 0) - (line.refundCents ?? 0);
+      const cols = line.productCents + (line.shippingRevenueCents ?? 0) + (line.bonusCents ?? 0) + (line.otherCents ?? 0) - (line.saleFeeTotalCents ?? 0) - (i.shippingFeeCents ?? 0) - (line.refundCents ?? 0);
       unexplained += i.netCents - cols;
     }
   }
