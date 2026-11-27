@@ -7,7 +7,7 @@ export type SaleIssue =
   | "total_centavos" | "sem_sku";
 
 export const SALE_ISSUES: Record<SaleIssue, { label: string; level: CheckLevel; fix: string }> = {
-  sem_anuncio: { label: "Venda sem anúncio cadastrado", level: "critico", fix: "Sem anúncio, o sistema não sabe qual produto saiu: a venda fica sem custo da mercadoria e sem imposto, e o lucro aparece maior. Cadastre o anúncio (MLB) com o produto e a venda é ligada na hora." },
+  sem_anuncio: { label: "Venda sem anúncio cadastrado", level: "critico", fix: "Sem anúncio, o sistema não sabe qual produto saiu: a venda fica sem custo da mercadoria e o lucro aparece maior (o imposto usa o padrão de 14,5%). Cadastre o anúncio (MLB) com o produto e a venda é ligada na hora." },
   sem_custo: { label: "Custo da mercadoria não contabilizado", level: "critico", fix: "O anúncio está ligado, mas o produto não tinha custo quando a venda entrou. Cadastre o custo em Produtos e clique em “Recalcular custos”." },
   sem_imposto: { label: "Imposto não contabilizado", level: "critico", fix: "O anúncio ligado está sem imposto (%), então o lucro desta venda não desconta imposto. Informe o imposto no anúncio (padrão 14,5%)." },
   total_diferente: { label: "Total do ML não bate com as colunas", level: "critico", fix: "A soma das colunas da planilha (receita + frete recebido + bônus ± demais colunas − tarifas − frete − reembolsos) é diferente do Total que o ML informa. O sistema calcula o lucro pelas colunas; confira a venda no ML para ver o que foi descontado." },
@@ -50,7 +50,7 @@ export function costChecks(i: SaleCheckInput): Record<CostKey, CostState> {
   return {
     tarifa: (i.saleFeeCents ?? 0) > 0 ? "ok" : i.listingFeeBps ? "estimado" : "falta",
     frete: (i.shippingFeeCents ?? 0) > 0 ? "ok" : i.inPack ? "pacote" : "falta",
-    imposto: i.linked && (i.taxBps ?? 0) > 0 ? "ok" : "falta",
+    imposto: !i.linked || (i.taxBps ?? 0) > 0 ? "ok" : "falta", // sem anúncio: imposto padrão (14,5%)
     mercadoria: i.linked && i.costCents != null ? "ok" : "falta",
   };
 }

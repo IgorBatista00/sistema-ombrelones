@@ -66,6 +66,7 @@ export function MlDashboardView({ d, qs }: { d: MlDashboard; qs: (p: Record<stri
         </p>
       )}
 
+      <CashCard d={d} />
       <CostsCard d={d} qs={qs} />
 
       <Card title="Faturamento e lucro" sub={`${br(d.de)} a ${br(d.ate)} · passe o mouse no gráfico para ver cada ${d.bucket === "dia" ? "dia" : d.bucket === "semana" ? "semana" : "mês"}`}>
@@ -194,5 +195,29 @@ function CostsCard({ d, qs }: { d: MlDashboard; qs: (p: Record<string, string | 
         </div>
       )}
     </Card>
+  );
+}
+
+/** Aumento do caixa: o que o ML repassa (coluna Total) menos o imposto pago na guia. A mercadoria não sai do caixa na venda. */
+function CashCard({ d }: { d: MlDashboard }) {
+  const c = d.breakdown.cash, b = d.breakdown;
+  const line = (label: React.ReactNode, v: React.ReactNode, cls = "") => <div className={`flex items-baseline justify-between gap-4 py-1.5 ${cls}`}><span>{label}</span><span className="tabular-nums">{v}</span></div>;
+  return (
+    <section className="card p-5" data-cash>
+      <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
+        <div>
+          <p className="label">Aumento do caixa</p>
+          <p className={`mt-2 text-4xl ${c.increase < 0 ? "text-danger" : "text-success"}`} data-cash-value>{formatBRL(c.increase)}</p>
+          <p className="mt-2 text-xs text-muted">{br(d.de)} a {br(d.ate)} · o que o Mercado Livre repassou menos o imposto pago em guia. O custo da mercadoria não entra aqui: ele saiu do caixa na compra, não na venda.</p>
+        </div>
+        <div className="text-sm">
+          {line(<>Recebido do Mercado Livre <span className="text-xs text-muted">(coluna Total: já sem tarifa, frete e reembolsos)</span></>, `+${formatBRL(c.mlReceived)}`)}
+          {line(<>Imposto <span className="text-xs text-muted">(guia separada, 14,5% sobre a receita por produtos)</span></>, `−${formatBRL(c.tax)}`)}
+          {line(<b className="font-medium">Aumento do caixa</b>, <b className="font-medium">{formatBRL(c.increase)}</b>, "border-t border-line")}
+          <p className="mt-3 text-xs text-muted">Comparação: lucro {formatBRL(b.profit)} (desconta o custo da mercadoria{b.outside.cancelled ? "; não inclui o que o ML cobrou em devoluções" : ""}). {b.outside.cancelled ? `O caixa já inclui ${formatBRL(b.outside.cancelled)} cobrados pelo ML em canceladas/devolvidas.` : ""}</p>
+          {c.noTotal > 0 && <p className="mt-1 text-xs text-warning">{c.noTotal} venda(s) sem a coluna Total: valor recebido calculado pelas colunas.</p>}
+        </div>
+      </div>
+    </section>
   );
 }

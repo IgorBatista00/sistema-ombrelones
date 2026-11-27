@@ -41,7 +41,7 @@ describe("validação das vendas do ML", () => {
     expect(costChecks({ ...semFrete, inPack: true }).frete).toBe("pacote");
     expect(saleIssues({ ...semFrete, inPack: true })).toEqual([]);
     expect(costChecks({ ...ok, saleFeeCents: null, listingFeeBps: 1200 }).tarifa).toBe("estimado");
-    expect(costChecks({ ...ok, linked: false, costCents: null })).toMatchObject({ imposto: "falta", mercadoria: "falta" });
+    expect(costChecks({ ...ok, linked: false, costCents: null })).toMatchObject({ imposto: "ok", mercadoria: "falta" }) // sem anúncio: imposto padrão;
     expect(saleLevel(saleIssues({ ...ok, taxBps: 0 }))).toBe("critico");
   });
   it("reembolso em venda válida é crítico", () => {

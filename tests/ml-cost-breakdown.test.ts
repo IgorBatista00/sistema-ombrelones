@@ -24,6 +24,12 @@ describe("detalhamento de receitas e custos do ML", () => {
     expect(b.totalIncome + b.totalCosts).toBe(b.profit);
     expect(b.profit).toBe(40000 - 4200 - 4500 - 5800 - 20000 - 300);
     expect(b.outside.unexplained).toBe(0);
+    expect(b.cash).toEqual({ mlReceived: 31300, tax: 5800, increase: 25500, noTotal: 0 });
+  });
+  it("caixa inclui o que o ML cobrou em devoluções; venda sem anúncio paga o imposto padrão", () => {
+    const b = costBreakdown([{ ...base, listing: null, costCents: null }, { ...base, cancelled: true, netCents: -7495 }]);
+    expect(b.cash.tax).toBe(5800); // 14,5% de R$ 400
+    expect(b.cash.mlReceived).toBe(31300 - 7495);
   });
   it("os 4 custos aparecem mesmo zerados; canceladas ficam à parte", () => {
     const b = costBreakdown([{ ...base, listing: null, costCents: null, otherLines: null, netCents: 31300 }, { ...base, cancelled: true, netCents: -7495 }]);

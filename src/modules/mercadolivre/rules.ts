@@ -61,7 +61,7 @@ export function lineProfit(line: SoldLine, listing: ListingCosts | null, unitCos
   const shipping = shipReal ? line.shippingFeeCents! : listing ? (listing.shippingCostCents ?? 0) * q : 0;
   const cost = unitCostCents != null ? unitCostCents * q : 0;
   const extras = listing ? ((listing.packagingCents ?? 0) + (listing.otherCostCents ?? 0)) * q : 0;
-  const tax = listing ? pct(line.productCents, listing.taxBps) : 0;
+  const tax = pct(line.productCents, listing ? listing.taxBps : ML_TAX_BPS); // venda sem anúncio cadastrado usa o imposto padrão
   const revenue = line.productCents + (line.shippingRevenueCents ?? 0) + (line.bonusCents ?? 0) + (line.otherCents ?? 0) - (line.refundCents ?? 0);
   const profit = revenue - fees - shipping - cost - extras - tax;
   return {
