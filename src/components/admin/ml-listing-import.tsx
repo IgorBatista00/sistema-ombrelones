@@ -15,7 +15,7 @@ export function MlListingImportButton() {
   const [prev, setPrev] = useState<ListingImportPreview | null>(null);
   const [done, setDone] = useState<Done | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [def, setDef] = useState({ taxPct: "", packaging: "", shipping: "", fixedFee: "", other: "", applyExisting: false });
+  const [def, setDef] = useState({ taxPct: "14,5", packaging: "", shipping: "", fixedFee: "", other: "", applyExisting: false });
   const [only, setOnly] = useState<"" | "sem">("");
   const [pending, start] = useTransition();
   const input = useRef<HTMLInputElement>(null);
@@ -86,7 +86,7 @@ export function MlListingImportButton() {
                     <fieldset className="mt-3 rounded border border-line p-3">
                       <legend className="px-1 text-xs font-medium">Custos padrão para os anúncios importados (o Mercado Livre não informa)</legend>
                       <div className="grid gap-3 sm:grid-cols-5">
-                        {field("taxPct", "Imposto (%)", "ex.: 6")}{field("packaging", "Embalagem por unid. (R$)", "0,00")}{field("shipping", "Frete pago por você, por unid. (R$)", "0,00")}{field("fixedFee", "Tarifa fixa por unid. (R$)", "0,00")}{field("other", "Outros custos por unid. (R$)", "0,00")}
+                        {field("taxPct", "Imposto (%) — padrão 14,5", "14,5")}{field("packaging", "Embalagem por unid. (R$)", "0,00")}{field("shipping", "Frete pago por você, por unid. (R$)", "0,00")}{field("fixedFee", "Tarifa fixa por unid. (R$)", "0,00")}{field("other", "Outros custos por unid. (R$)", "0,00")}
                       </div>
                       <label className="mt-2 flex items-center gap-1.5 text-xs"><input type="checkbox" checked={def.applyExisting} onChange={(e) => setDef({ ...def, applyExisting: e.target.checked })} />Aplicar esses custos também aos anúncios já cadastrados (senão, eles mantêm os custos que já têm)</label>
                       <p className="mt-1 text-[11px] text-muted">A tarifa de venda (%) vem da planilha. O lucro das vendas usa as tarifas e fretes reais da planilha de vendas; estes custos servem para a simulação e quando a venda não traz o valor.</p>

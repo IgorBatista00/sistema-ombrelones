@@ -40,3 +40,10 @@ describe("validação das vendas do ML", () => {
     expect(soldLineOf({ ...base, netCents: null }, false).shippingFeeCents).toBeNull();
   });
 });
+
+describe("imposto padrão do ML", () => {
+  it("novo anúncio já vem com 14,5%", async () => {
+    const { emptyListing } = await import("@/modules/mercadolivre/listing-form");
+    expect(emptyListing().taxPct).toBe("14,5");
+  });
+});

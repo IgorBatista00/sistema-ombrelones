@@ -81,7 +81,7 @@ const pct = z.string().optional().transform((v, ctx) => {
   if (!Number.isFinite(n) || n < 0 || n > 100) { ctx.addIssue({ code: "custom", message: "Percentual inválido nos custos padrão (0 a 100)." }); return z.NEVER; }
   return Math.round(n * 100);
 });
-export const listingDefaultsSchema = z.object({ taxPct: pct, packaging: money, shipping: money, fixedFee: money, other: money, applyExisting: z.string().optional().transform((v) => v === "1") });
+export const listingDefaultsSchema = z.object({ taxPct: z.string().optional().transform((v) => ((v ?? "").trim() ? v : "14,5")).pipe(pct), packaging: money, shipping: money, fixedFee: money, other: money, applyExisting: z.string().optional().transform((v) => v === "1") });
 
 export async function commitListingSheet(actorId: string, buf: Buffer, filename: string, rawDefaults: unknown) {
   const d = listingDefaultsSchema.safeParse(rawDefaults);

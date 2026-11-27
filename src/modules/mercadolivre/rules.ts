@@ -126,5 +126,7 @@ export function stockAdjustments(desired: Map<string, number>, alreadyOut: Map<s
 }
 export const stockRef = (orderId: string) => `ML:${orderId}`;
 
+/** Imposto padrão sobre as vendas no Mercado Livre (14,5%). */
+export const ML_TAX_BPS = 1450;
 export const bpsFromPct = (v: unknown) => { const t = String(v ?? "").trim().replace("%", "").replace(",", "."); if (!t) return null; const x = Number(t); return Number.isFinite(x) && x >= 0 && x <= 100 ? Math.round(x * 100) : NaN; };
 export const fmtPct = (bps: number | null | undefined) => (bps == null ? "" : (bps / 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 }));

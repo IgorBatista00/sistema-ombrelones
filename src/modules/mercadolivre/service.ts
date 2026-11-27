@@ -6,7 +6,7 @@ import { AppError } from "@/lib/errors";
 import { parseMoney } from "@/modules/products/cost";
 import { isIsoDay, brDate, spDay, dayDiff } from "@/modules/purchase-orders/rules";
 import {
-  SHIP_STAGE, bpsFromPct, lineProfit, soldLineOf, listingUnitCost, matchListing, shipStage, simulateListing, stockAdjustments, stockRef, variantUnitCost, type ShipStage,
+  SHIP_STAGE, ML_TAX_BPS, bpsFromPct, lineProfit, soldLineOf, listingUnitCost, matchListing, shipStage, simulateListing, stockAdjustments, stockRef, variantUnitCost, type ShipStage,
 } from "./rules";
 
 type Tx = Prisma.TransactionClient;
@@ -72,7 +72,7 @@ export async function saveListing(actorId: string, id: string | null, raw: unkno
   if (new Set(f.components.map((c) => c.variantId)).size !== f.components.length) throw new AppError("VALIDATION", "O mesmo produto aparece duas vezes — some as quantidades numa linha só.", 422);
   const data = {
     mlItemId: f.mlItemId, variation: f.variation, sku: f.sku, title: f.title, listingType: f.listingType, status: f.status, priceCents: f.price,
-    saleFeeBps: f.saleFeePct, fixedFeeCents: f.fixedFee, shippingCostCents: f.shippingCost, packagingCents: f.packaging, taxBps: f.taxPct, otherCostCents: f.otherCost, notes: f.notes,
+    saleFeeBps: f.saleFeePct, fixedFeeCents: f.fixedFee, shippingCostCents: f.shippingCost, packagingCents: f.packaging, taxBps: f.taxPct ?? ML_TAX_BPS, otherCostCents: f.otherCost, notes: f.notes,
   };
   try {
     return await db.$transaction(async (tx) => {

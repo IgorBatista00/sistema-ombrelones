@@ -1274,7 +1274,7 @@ model MlListing {
   fixedFeeCents     Int? // tarifa fixa por unidade
   shippingCostCents Int? // frete por unidade pago pelo vendedor
   packagingCents    Int? // embalagem por unidade
-  taxBps            Int? // imposto sobre a venda % × 100
+  taxBps            Int?     @default(1450) // imposto sobre a venda % × 100 (padrão 14,5%)
   otherCostCents    Int? // outros custos por unidade
   notes             String?
   createdById       String
