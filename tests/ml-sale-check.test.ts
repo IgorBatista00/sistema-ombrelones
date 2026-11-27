@@ -44,6 +44,9 @@ describe("validação das vendas do ML", () => {
     expect(costChecks({ ...ok, linked: false, costCents: null })).toMatchObject({ imposto: "falta", mercadoria: "falta" });
     expect(saleLevel(saleIssues({ ...ok, taxBps: 0 }))).toBe("critico");
   });
+  it("reembolso em venda válida é crítico", () => {
+    expect(saleIssues({ ...ok, refundCents: 56540, netCents: ok.netCents! - 56540 })).toEqual(["reembolso_em_valida"]);
+  });
   it("bônus do ML entra na conta", () => {
     expect(columnsNet({ ...ok, bonusCents: 122 })).toBe(32917);
     expect(saleIssues({ ...ok, bonusCents: 122, netCents: 32917 })).toEqual([]);

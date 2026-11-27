@@ -7,6 +7,7 @@ const isoAdd = (iso: string, n: number) => new Date(Date.parse(`${iso}T12:00:00Z
 const isoDiff = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / DAY);
 import { mlPeriod, ordersIn, range, type MlFilter } from "./service";
 import { SHIP_STAGE, type ShipStage } from "./rules";
+import { costBreakdown } from "./cost-breakdown";
 
 const WEEK = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const spParts = (d: Date) => {
@@ -79,13 +80,21 @@ export async function mlDashboard(f: MlFilter) {
       }
     }
   }
+  // detalhamento de receitas e custos (todas as colunas de valor da planilha + custos do cadastro)
+  const items = await db.mlOrderItem.findMany({
+    where: { saleDate: range(de, ate) },
+    select: { quantity: true, productCents: true, unitPriceCents: true, shippingRevenueCents: true, saleFeeTotalCents: true, saleFeeCents: true, shippingFeeCents: true, refundCents: true, netCents: true, bonusCents: true, otherLines: true, costCents: true, orderStatus: true,
+      listing: { select: { saleFeeBps: true, fixedFeeCents: true, shippingCostCents: true, packagingCents: true, taxBps: true, otherCostCents: true } } },
+  });
+  const breakdown = costBreakdown(items.map((i) => ({ ...i, cancelled: i.orderStatus === "cancelled" })));
+
   const withMargin = <T extends Agg>(x: T) => ({ ...x, marginBps: x.revenue > 0 ? Math.round((x.profit * 10_000) / x.revenue) : null });
   const topListings = [...byListing.values()].map(withMargin).sort((a, b) => b.revenue - a.revenue);
   const topProducts = [...byProduct.values()].map(withMargin).sort((a, b) => b.revenue - a.revenue);
   const lowMargin = topListings.filter((l) => !l.costMissing && l.marginBps != null && l.marginBps < 1000).sort((a, b) => (a.marginBps ?? 0) - (b.marginBps ?? 0)).slice(0, 5);
 
   return {
-    de, ate, days, prevDe, prevAte, bucket, kpi, prev,
+    de, ate, days, prevDe, prevAte, bucket, kpi, prev, breakdown,
     series: [...series.values()], byWeekday, byHour, stages,
     byType: { classico: withMargin(byType.classico), premium: withMargin(byType.premium) },
     topListings: topListings.slice(0, 10), listingsCount: topListings.length, topProducts: topProducts.slice(0, 10), productsCount: topProducts.length, lowMargin,

@@ -31,7 +31,7 @@ export async function mlSaleCheck(f: MlFilter) {
     const input = {
       cancelled, productCents: line.productCents, shippingRevenueCents: i.shippingRevenueCents, saleFeeCents: line.saleFeeTotalCents ?? null,
       shippingFeeCents: i.shippingFeeCents, refundCents: i.refundCents, netCents: i.netCents, sku: i.sku, linked: !!i.listingId,
-      costCents: i.costCents, taxBps: i.listing?.taxBps ?? null, profitCents: p.profit, inPack: i.inPack, bonusCents: i.bonusCents, listingFeeBps: i.listing?.saleFeeBps ?? null,
+      costCents: i.costCents, taxBps: i.listing?.taxBps ?? null, profitCents: p.profit, inPack: i.inPack, bonusCents: i.bonusCents, listingFeeBps: i.listing?.saleFeeBps ?? null, otherCents: line.otherCents ?? null,
     };
     const issues = saleIssues(input);
     const price = Math.round(line.productCents / Math.max(1, i.quantity));

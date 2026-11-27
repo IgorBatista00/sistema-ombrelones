@@ -1,9 +1,9 @@
 import "server-only";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { readMatrix } from "@/modules/products/excel";
-import { findHeader, parseMlRow, type MlSheetRow } from "./sheet-rules";
+import { extraMoneyCols, findHeader, parseMlRow, type MlSheetRow } from "./sheet-rules";
 import { applyMlStock, relinkItems } from "@/modules/mercadolivre/service";
 
 /** Recebimentos vindos de planilha usam este prefixo no paymentId (a integração direta usa o id real do pagamento). */
@@ -23,7 +23,8 @@ async function analyze(buf: Buffer, filename: string) {
   if (!h) throw new AppError("BAD_HEADER", "Não encontrei as colunas do relatório de vendas (nº da venda e título do anúncio ou receita). Use a planilha baixada em Mercado Livre › Vendas › “Baixar Excel de vendas”, sem alterar os títulos das colunas.", 422);
   const body = matrix.slice(h.row + 1);
   if (body.length > MAX_LINES) throw new AppError("TOO_MANY_ROWS", `Máximo de ${MAX_LINES} linhas por importação — exporte um período menor.`, 422);
-  const parsed = body.map((cells, i) => parseMlRow((cells ?? []).map((c) => String(c ?? "")), h.cols, h.row + i + 2)).filter((r) => !(r.skipped && !r.warnings.length && !r.errors.length));
+  const extra = extraMoneyCols((matrix[h.row] ?? []).map((c) => String(c ?? "")), h.cols);
+  const parsed = body.map((cells, i) => parseMlRow((cells ?? []).map((c) => String(c ?? "")), h.cols, h.row + i + 2, extra)).filter((r) => !(r.skipped && !r.warnings.length && !r.errors.length));
   const byOrder = new Map<string, MlSheetRow[]>();
   for (const r of parsed) if (r.ok) byOrder.set(r.ok.orderId, [...(byOrder.get(r.ok.orderId) ?? []), r.ok]);
   const ids = [...byOrder.keys()];
@@ -93,7 +94,7 @@ export async function commitMlSheet(actorId: string, buf: Buffer, filename: stri
         orderId: o.orderId, position: i, itemId: r.itemId ?? r.sku ?? "PLANILHA", title: r.title, categoryId: null, quantity: r.quantity, unitPriceCents: r.unitPriceCents,
         saleFeeCents: r.saleFeeCents != null ? Math.round(r.saleFeeCents / r.quantity) : null, orderStatus: r.cancelled ? "cancelled" : "paid", saleDate: r.saleDate,
         sku: r.sku, variation: r.variation, productCents: r.productCents, shippingRevenueCents: r.shippingCents, saleFeeTotalCents: r.saleFeeCents, shippingFeeCents: r.shippingFeeCents,
-        refundCents: r.refundCents, netCents: r.totalCents, inPack: r.inPack, bonusCents: r.bonusCents, statusText: r.status.slice(0, 200), shipBy: r.shipBy,
+        refundCents: r.refundCents, netCents: r.totalCents, inPack: r.inPack, bonusCents: r.bonusCents, otherLines: r.otherLines.length ? (r.otherLines as Prisma.InputJsonValue) : Prisma.DbNull, statusText: r.status.slice(0, 200), shipBy: r.shipBy,
         costCents: prev.get(`${r.itemId ?? r.sku ?? "PLANILHA"}|${r.variation ?? ""}|${r.quantity}`) ?? null,
       })) });
     }

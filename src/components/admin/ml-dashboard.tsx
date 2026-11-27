@@ -66,6 +66,8 @@ export function MlDashboardView({ d, qs }: { d: MlDashboard; qs: (p: Record<stri
         </p>
       )}
 
+      <CostsCard d={d} qs={qs} />
+
       <Card title="Faturamento e lucro" sub={`${br(d.de)} a ${br(d.ate)} · passe o mouse no gráfico para ver cada ${d.bucket === "dia" ? "dia" : d.bucket === "semana" ? "semana" : "mês"}`}>
         <TimeChart points={points} bucketLabel={d.bucket === "dia" ? "dia" : d.bucket === "semana" ? "semana" : "mês"} />
       </Card>
@@ -154,5 +156,43 @@ export function MlDashboardView({ d, qs }: { d: MlDashboard; qs: (p: Record<stri
       </div>
       <p className="text-xs text-muted">Faturamento = receita de produtos das vendas válidas (sem canceladas/devolvidas). Lucro = faturamento + frete recebido − reembolsos − tarifas e fretes do Mercado Livre − custo dos produtos − imposto, embalagem e outros custos do anúncio. Comparação com {br(d.prevDe)} a {br(d.prevAte)}.</p>
     </div>
+  );
+}
+
+/** Todas as receitas e custos das vendas válidas, linha a linha, até o lucro. */
+function CostsCard({ d, qs }: { d: MlDashboard; qs: (p: Record<string, string | undefined>) => string }) {
+  const b = d.breakdown;
+  const base = b.product || 1;
+  const row = (l: MlDashboard["breakdown"]["costs"][number], sign: 1 | -1) => (
+    <tr key={l.key} data-cost-line={l.key} className="border-b border-line/60 last:border-0">
+      <td className="py-2 pr-3">{l.label}{l.hint && <span className={`block text-xs ${l.key === "frete" ? "text-muted" : "text-warning"}`}>{l.hint}</span>}</td>
+      <td className="hidden py-2 pr-3 text-xs text-muted sm:table-cell">{l.source === "planilha" ? "planilha do ML" : "cadastro do anúncio/produto"}</td>
+      <td className={`py-2 pr-3 text-right tabular-nums ${l.cents === 0 && sign < 0 ? "text-danger" : ""}`}>{l.cents === 0 && sign < 0 ? "R$ 0,00 — não contabilizado" : `${sign < 0 ? "−" : "+"}${formatBRL(Math.abs(l.cents))}`}</td>
+      <td className="w-40 py-2"><div className="flex items-center gap-2"><div className="h-2 flex-1 overflow-hidden rounded bg-ink/[0.06]"><div className="h-full rounded" style={{ width: `${Math.min(100, (Math.abs(l.cents) / base) * 100)}%`, background: sign < 0 ? "#f47230" : "#257de0" }} /></div><span className="w-12 text-right text-xs text-muted tabular-nums">{share(Math.abs(l.cents), base)}</span></div></td>
+    </tr>
+  );
+  return (
+    <Card title="Receitas e custos das vendas" sub={`Vendas válidas de ${br(d.de)} a ${br(d.ate)} · % sobre a receita por produtos · inclui todas as colunas de valor da planilha do ML`} action={<Link className="link text-xs" href={qs({ aba: "validacao" })}>Validar venda por venda</Link>}>
+      <div className="overflow-x-auto" data-cost-breakdown>
+        <table className="w-full text-sm">
+          <thead className="text-[11px] uppercase tracking-label text-muted"><tr><th className="pb-2 text-left font-normal">Receitas</th><th className="hidden pb-2 text-left font-normal sm:table-cell">Origem</th><th className="pb-2 text-right font-normal">Valor</th><th className="pb-2 font-normal" /></tr></thead>
+          <tbody>{b.income.map((l) => row(l, 1))}</tbody>
+          <tbody><tr><td colSpan={4} className="pb-2 pt-4 text-[11px] uppercase tracking-label text-muted">Custos pagos</td></tr>{b.costs.map((l) => row(l, -1))}</tbody>
+          <tfoot className="border-t-2 border-ink/20 font-medium">
+            <tr><td className="py-2">Total de custos</td><td className="hidden sm:table-cell" /><td className="py-2 pr-3 text-right tabular-nums">−{formatBRL(Math.abs(b.totalCosts))}</td><td className="py-2 text-right text-xs text-muted">{share(Math.abs(b.totalCosts), base)}</td></tr>
+            <tr><td className="py-2">Lucro</td><td className="hidden sm:table-cell" /><td className={`py-2 pr-3 text-right tabular-nums ${b.profit < 0 ? "text-danger" : "text-success"}`}>{formatBRL(b.profit)}</td><td className="py-2 text-right text-xs text-muted">{share(b.profit, base)}</td></tr>
+          </tfoot>
+        </table>
+      </div>
+      {(b.outside.cancelled !== 0 || Math.abs(b.outside.unexplained) >= 100) && (
+        <div className="mt-4 rounded border border-warning/40 bg-warning/[0.06] p-3 text-xs" data-cost-outside>
+          <p className="font-medium">Lançado pelo Mercado Livre e fora do lucro acima</p>
+          <ul className="mt-1 space-y-0.5">
+            {b.outside.cancelled !== 0 && <li>Canceladas/devolvidas com valor: <b className="font-medium">{formatBRL(b.outside.cancelled)}</b> em {b.outside.cancelledCount} venda(s) (o sistema conta R$ 0 para venda cancelada).</li>}
+            {Math.abs(b.outside.unexplained) >= 100 && <li>Diferença entre o Total do ML e as colunas da planilha: <b className="font-medium">{formatBRL(b.outside.unexplained)}</b> (veja em Validação das vendas → “Total do ML não bate”).</li>}
+          </ul>
+        </div>
+      )}
+    </Card>
   );
 }
