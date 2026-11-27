@@ -1251,6 +1251,8 @@ model MlOrderItem {
   statusText           String? // estado + descrição do status (ex.: "Pronto para enviar")
   shipBy               DateTime? // prazo de despacho, quando a planilha informar
   costCents            Int? // custo dos produtos vinculados (snapshot ao vincular/importar)
+  inPack               Boolean? // "Pacote de diversos produtos" = Sim (o frete vem numa das vendas do pacote); null = importada antes
+  bonusCents           Int? // "Descontos e bônus" (crédito do ML, com sinal)
 
   listing MlListing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
 

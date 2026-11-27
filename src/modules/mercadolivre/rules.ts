@@ -45,7 +45,7 @@ export function listingUnitCost(components: { quantity: number; unitCostCents: n
 
 // ---------------------------------------------------------------- lucro
 export interface ListingCosts { saleFeeBps?: number | null; fixedFeeCents?: number | null; shippingCostCents?: number | null; packagingCents?: number | null; taxBps?: number | null; otherCostCents?: number | null }
-export interface SoldLine { quantity: number; productCents: number; shippingRevenueCents?: number | null; saleFeeTotalCents?: number | null; shippingFeeCents?: number | null; refundCents?: number | null; cancelled?: boolean }
+export interface SoldLine { quantity: number; productCents: number; shippingRevenueCents?: number | null; saleFeeTotalCents?: number | null; shippingFeeCents?: number | null; refundCents?: number | null; bonusCents?: number | null; cancelled?: boolean }
 const pct = (v: number, bps: number | null | undefined) => Math.round((v * (bps ?? 0)) / 10_000);
 
 /**
@@ -62,7 +62,7 @@ export function lineProfit(line: SoldLine, listing: ListingCosts | null, unitCos
   const cost = unitCostCents != null ? unitCostCents * q : 0;
   const extras = listing ? ((listing.packagingCents ?? 0) + (listing.otherCostCents ?? 0)) * q : 0;
   const tax = listing ? pct(line.productCents, listing.taxBps) : 0;
-  const revenue = line.productCents + (line.shippingRevenueCents ?? 0) - (line.refundCents ?? 0);
+  const revenue = line.productCents + (line.shippingRevenueCents ?? 0) + (line.bonusCents ?? 0) - (line.refundCents ?? 0);
   const profit = revenue - fees - shipping - cost - extras - tax;
   return {
     revenue, fees, shipping, cost, extras, tax, profit,
@@ -73,11 +73,11 @@ export function lineProfit(line: SoldLine, listing: ListingCosts | null, unitCos
 }
 
 /** Linha vendida a partir do item importado. Na planilha (com "Total"), coluna de envio em branco = R$ 0 — não estima pelo anúncio. */
-export function soldLineOf(i: { quantity: number; productCents: number | null; unitPriceCents: number; shippingRevenueCents: number | null; saleFeeTotalCents: number | null; saleFeeCents: number | null; shippingFeeCents: number | null; refundCents: number | null; netCents: number | null }, cancelled: boolean): SoldLine {
+export function soldLineOf(i: { quantity: number; productCents: number | null; unitPriceCents: number; shippingRevenueCents: number | null; saleFeeTotalCents: number | null; saleFeeCents: number | null; shippingFeeCents: number | null; refundCents: number | null; netCents: number | null; bonusCents?: number | null }, cancelled: boolean): SoldLine {
   return {
     quantity: i.quantity, productCents: i.productCents ?? i.unitPriceCents * i.quantity, shippingRevenueCents: i.shippingRevenueCents,
     saleFeeTotalCents: i.saleFeeTotalCents ?? (i.saleFeeCents != null ? i.saleFeeCents * i.quantity : null),
-    shippingFeeCents: i.shippingFeeCents ?? (i.netCents != null ? 0 : null), refundCents: i.refundCents, cancelled,
+    shippingFeeCents: i.shippingFeeCents ?? (i.netCents != null ? 0 : null), refundCents: i.refundCents, bonusCents: i.bonusCents ?? null, cancelled,
   };
 }
 

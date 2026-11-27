@@ -93,7 +93,7 @@ export async function commitMlSheet(actorId: string, buf: Buffer, filename: stri
         orderId: o.orderId, position: i, itemId: r.itemId ?? r.sku ?? "PLANILHA", title: r.title, categoryId: null, quantity: r.quantity, unitPriceCents: r.unitPriceCents,
         saleFeeCents: r.saleFeeCents != null ? Math.round(r.saleFeeCents / r.quantity) : null, orderStatus: r.cancelled ? "cancelled" : "paid", saleDate: r.saleDate,
         sku: r.sku, variation: r.variation, productCents: r.productCents, shippingRevenueCents: r.shippingCents, saleFeeTotalCents: r.saleFeeCents, shippingFeeCents: r.shippingFeeCents,
-        refundCents: r.refundCents, netCents: r.totalCents, statusText: r.status.slice(0, 200), shipBy: r.shipBy,
+        refundCents: r.refundCents, netCents: r.totalCents, inPack: r.inPack, bonusCents: r.bonusCents, statusText: r.status.slice(0, 200), shipBy: r.shipBy,
         costCents: prev.get(`${r.itemId ?? r.sku ?? "PLANILHA"}|${r.variation ?? ""}|${r.quantity}`) ?? null,
       })) });
     }

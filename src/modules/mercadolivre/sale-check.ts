@@ -4,13 +4,13 @@ import { db } from "@/lib/db";
 import { cancelledOf, mlListingsView, range, type MlFilter } from "./service";
 import { lineProfit, soldLineOf } from "./rules";
 import { emptyListing, listingInitFrom, type ListingInit } from "./listing-form";
-import { SALE_ISSUES, columnsNet, netDiff, saleIssues, saleLevel, type SaleIssue } from "./sale-check-rules";
+import { SALE_ISSUES, columnsNet, costChecks, netDiff, saleIssues, saleLevel, type CostKey, type CostState, type SaleIssue } from "./sale-check-rules";
 
 export type SaleCheckRow = {
   id: string; orderId: string; saleDate: Date; status: string; cancelled: boolean;
   title: string; itemId: string; variation: string | null; sku: string | null; quantity: number; listingTitle: string | null;
   productCents: number; feesCents: number; netCents: number | null; columnsNetCents: number; diffCents: number | null;
-  costCents: number | null; profitCents: number; issues: SaleIssue[]; level: ReturnType<typeof saleLevel>;
+  costCents: number | null; profitCents: number; costs: Record<CostKey, CostState> | null; issues: SaleIssue[]; level: ReturnType<typeof saleLevel>;
   listingId: string | null; init: ListingInit | null;
 };
 
@@ -31,7 +31,7 @@ export async function mlSaleCheck(f: MlFilter) {
     const input = {
       cancelled, productCents: line.productCents, shippingRevenueCents: i.shippingRevenueCents, saleFeeCents: line.saleFeeTotalCents ?? null,
       shippingFeeCents: i.shippingFeeCents, refundCents: i.refundCents, netCents: i.netCents, sku: i.sku, linked: !!i.listingId,
-      costCents: i.costCents, taxBps: i.listing?.taxBps ?? null, profitCents: p.profit,
+      costCents: i.costCents, taxBps: i.listing?.taxBps ?? null, profitCents: p.profit, inPack: i.inPack, bonusCents: i.bonusCents, listingFeeBps: i.listing?.saleFeeBps ?? null,
     };
     const issues = saleIssues(input);
     const price = Math.round(line.productCents / Math.max(1, i.quantity));
@@ -39,7 +39,7 @@ export async function mlSaleCheck(f: MlFilter) {
       id: i.id, orderId: i.orderId, saleDate: i.saleDate, status: i.statusText ?? i.orderStatus, cancelled,
       title: i.title, itemId: i.itemId, variation: i.variation, sku: i.sku, quantity: i.quantity, listingTitle: i.listing?.title ?? null,
       productCents: line.productCents, feesCents: (line.saleFeeTotalCents ?? 0) + (i.shippingFeeCents ?? 0), netCents: i.netCents,
-      columnsNetCents: columnsNet(input), diffCents: netDiff(input), costCents: i.costCents, profitCents: p.profit, issues, level: saleLevel(issues),
+      columnsNetCents: columnsNet(input), diffCents: netDiff(input), costCents: i.costCents, profitCents: p.profit, costs: cancelled ? null : costChecks(input), issues, level: saleLevel(issues),
       listingId: i.listingId,
       init: i.listingId ? initOf.get(i.listingId) ?? null : emptyListing({
         mlItemId: /^[A-Z]{3}\d+$/.test(i.itemId) ? i.itemId : "", variation: i.variation ?? "", sku: i.sku ?? "", title: i.title.replace(/ — .*$/, ""),
@@ -58,6 +58,8 @@ export async function mlSaleCheck(f: MlFilter) {
     noCostRevenue: sum(active.filter((r) => r.issues.includes("sem_anuncio") || r.issues.includes("sem_custo")), (r) => r.productCents),
     noCostUnits: sum(active.filter((r) => r.issues.includes("sem_anuncio") || r.issues.includes("sem_custo")), (r) => r.quantity),
     mlNet: sum(withTotal, (r) => r.netCents!), columnsNet: sum(withTotal, (r) => r.columnsNetCents), withTotal: withTotal.length,
+    costs: (["tarifa", "frete", "imposto", "mercadoria"] as CostKey[]).map((k) => ({ key: k, ok: active.filter((r) => r.costs && (r.costs[k] === "ok" || r.costs[k] === "pacote")).length, missing: active.filter((r) => r.costs?.[k] === "falta").length, estimated: active.filter((r) => r.costs?.[k] === "estimado").length })),
+    allCosts: active.filter((r) => r.costs && Object.values(r.costs).every((v) => v === "ok" || v === "pacote")).length,
     cancelledValue: sum(rows.filter((r) => r.issues.includes("cancelada_com_valor")), (r) => r.netCents ?? 0),
   };
 

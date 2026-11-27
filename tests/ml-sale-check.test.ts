@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { columnsNet, netDiff, saleIssues, saleLevel, type SaleCheckInput } from "@/modules/mercadolivre/sale-check-rules";
+import { columnsNet, costChecks, netDiff, saleIssues, saleLevel, type SaleCheckInput } from "@/modules/mercadolivre/sale-check-rules";
 import { soldLineOf } from "@/modules/mercadolivre/rules";
 
 // linha [TESTE] parecida com a planilha: 431,44 − 58,24 − 45,25 = 327,95
@@ -33,6 +33,20 @@ describe("validação das vendas do ML", () => {
     expect(saleIssues({ ...ok, profitCents: -10 })).toEqual(["prejuizo"]);
     expect(saleIssues({ ...ok, taxBps: null })).toEqual(["sem_imposto"]);
     expect(saleIssues({ ...ok, sku: null })).toEqual(["sem_sku"]);
+  });
+  it("confere os 4 custos: tarifa, frete, imposto e mercadoria", () => {
+    expect(costChecks(ok)).toEqual({ tarifa: "ok", frete: "ok", imposto: "ok", mercadoria: "ok" });
+    const semFrete = { ...ok, shippingFeeCents: null, netCents: 37320 };
+    expect(saleIssues(semFrete)).toEqual(["sem_frete"]);
+    expect(costChecks({ ...semFrete, inPack: true }).frete).toBe("pacote");
+    expect(saleIssues({ ...semFrete, inPack: true })).toEqual([]);
+    expect(costChecks({ ...ok, saleFeeCents: null, listingFeeBps: 1200 }).tarifa).toBe("estimado");
+    expect(costChecks({ ...ok, linked: false, costCents: null })).toMatchObject({ imposto: "falta", mercadoria: "falta" });
+    expect(saleLevel(saleIssues({ ...ok, taxBps: 0 }))).toBe("critico");
+  });
+  it("bônus do ML entra na conta", () => {
+    expect(columnsNet({ ...ok, bonusCents: 122 })).toBe(32917);
+    expect(saleIssues({ ...ok, bonusCents: 122, netCents: 32917 })).toEqual([]);
   });
   it("na planilha, frete em branco conta como zero (não estima pelo anúncio)", () => {
     const base = { quantity: 1, productCents: 40000, unitPriceCents: 40000, shippingRevenueCents: null, saleFeeTotalCents: 4200, saleFeeCents: null, shippingFeeCents: null, refundCents: null };

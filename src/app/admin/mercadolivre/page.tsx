@@ -10,7 +10,7 @@ import { MlListingImportButton } from "@/components/admin/ml-listing-import";
 import { MlDashboardView } from "@/components/admin/ml-dashboard";
 import { mlDashboard } from "@/modules/mercadolivre/dashboard";
 import { mlSaleCheck } from "@/modules/mercadolivre/sale-check";
-import { LEVEL_LABEL, SALE_ISSUES, type SaleIssue } from "@/modules/mercadolivre/sale-check-rules";
+import { COST_LABEL, LEVEL_LABEL, SALE_ISSUES, type SaleIssue } from "@/modules/mercadolivre/sale-check-rules";
 import { ApplyStockButton, DeleteListingButton, ListingButton, RecalcCostsButton, ShipButton, ShipQueueSelect, StockFromForm } from "@/components/admin/ml";
 import { emptyListing, listingInitFrom } from "@/modules/mercadolivre/listing-form";
 import { listingFormOptions, mlFilterSchema, mlListingsByProduct, mlListingsView, mlPeriod, mlProfitByListing, mlSalesView, mlShippingQueue } from "@/modules/mercadolivre/service";
@@ -257,6 +257,16 @@ async function SaleCheck({ f, qs, variants }: { f: Parameters<typeof mlSaleCheck
         <div className="card p-4"><p className="label">Atenção</p><p className={`mt-2 text-3xl ${s.aviso ? "text-warning" : ""}`}>{s.aviso}</p><p className="mt-1 text-xs text-muted">{s.cancelledValue ? `canceladas com ${formatBRL(s.cancelledValue)} lançados pelo ML` : "valores para conferir"}</p></div>
         <div className="card p-4" data-check-total><p className="label">Conferência com o Total do ML</p><p className={`mt-2 text-3xl ${Math.abs(diff) >= 200 ? "text-danger" : "text-success"}`}>{diff === 0 ? "Bate" : formatBRL(diff)}</p><p className="mt-1 text-xs text-muted">ML informa {formatBRL(s.mlNet)} líquido; as colunas somam {formatBRL(s.columnsNet)} ({s.withTotal} vendas válidas com Total)</p></div>
       </div>
+      <div className="card mb-4 p-4" data-check-costs>
+        <div className="flex flex-wrap items-baseline justify-between gap-2"><p className="font-medium">Custos contabilizados nas vendas</p><p className="text-sm"><b className={`font-medium ${s.allCosts === s.active ? "text-success" : "text-danger"}`}>{s.allCosts} de {s.active}</b> <span className="text-muted">vendas válidas com os 4 custos</span></p></div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{s.costs.map((c) => (
+          <Link key={c.key} href={qs({ aba: "validacao", sev: undefined, problema: c.key === "tarifa" ? "sem_tarifa" : c.key === "frete" ? "sem_frete" : c.key === "imposto" ? "sem_imposto" : "sem_custo" })} className="rounded border border-line p-3 hover:border-ink/50" data-cost={c.key}>
+            <p className="label">{COST_LABEL[c.key]}</p>
+            <p className={`mt-1 text-2xl ${c.missing || c.estimated ? "text-danger" : "text-success"}`}>{c.ok}<span className="text-sm text-muted">/{s.active}</span></p>
+            <p className="text-xs text-muted">{c.missing ? `${c.missing} sem ${COST_LABEL[c.key].toLowerCase()}` : "todas contabilizadas"}{c.estimated ? ` · ${c.estimated} estimada(s) pelo anúncio` : ""}</p>
+          </Link>))}</div>
+        <p className="mt-2 text-xs text-muted">Mercadoria e imposto vêm do anúncio cadastrado: venda sem anúncio fica sem os dois (o filtro mostra “sem anúncio” separado). Frete “de pacote”: o ML cobra o frete numa das vendas do mesmo pacote.</p>
+      </div>
       <div className="mb-4 flex flex-wrap items-center gap-3"><RecalcCostsButton /><span className="text-xs text-muted">Use depois de cadastrar anúncios ou custos de produtos: as vendas que estavam sem custo passam a ter.</span></div>
       <div className="card mb-4 p-4" data-check-filters>
         <p className="mb-2 text-xs text-muted">Filtrar por nível</p>
@@ -267,11 +277,12 @@ async function SaleCheck({ f, qs, variants }: { f: Parameters<typeof mlSaleCheck
       {f.problema && SALE_ISSUES[f.problema as SaleIssue] && <p className="mb-3 rounded border border-line bg-white px-4 py-2 text-sm"><b className="font-medium">{SALE_ISSUES[f.problema as SaleIssue].label}:</b> {SALE_ISSUES[f.problema as SaleIssue].fix}</p>}
       <div className="card overflow-x-auto" data-check-table>
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Venda", "Anúncio", "Valores", "Nível", "O que conferir", ""].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3 font-normal">{h}</th>)}</tr></thead>
+          <thead className="border-b border-line text-[11px] uppercase tracking-label text-muted"><tr>{["Venda", "Anúncio", "Custos", "Valores", "Nível", "O que conferir", ""].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3 font-normal">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-line">{list.map((r) => (
             <tr key={r.id} data-check-row={r.orderId} className="align-top">
               <td className="whitespace-nowrap px-4 py-3"><p className="font-medium tabular-nums">{r.orderId}</p><p className="text-xs text-muted">{d(r.saleDate)} · {r.quantity} un.</p><p className="max-w-48 truncate text-xs text-muted" title={r.status}>{r.status}</p></td>
               <td className="min-w-60 max-w-80 px-4 py-3"><p className="line-clamp-2">{r.title}</p><p className="text-xs text-muted">{[r.itemId, r.sku ? `SKU ${r.sku}` : null].filter(Boolean).join(" · ")}</p><p className={`text-xs ${r.listingId ? "text-muted" : "text-danger"}`}>{r.listingId ? "Anúncio cadastrado" : "Sem anúncio no cadastro"}</p></td>
+              <td className="whitespace-nowrap px-4 py-3 text-xs" data-costs>{r.costs ? <ul className="space-y-0.5">{(Object.keys(COST_LABEL) as (keyof typeof COST_LABEL)[]).map((k) => { const v = r.costs![k]; return <li key={k} className={v === "falta" ? "text-danger" : v === "estimado" ? "text-warning" : ""}><span aria-hidden className="mr-1 inline-block w-3">{v === "falta" ? "✕" : v === "estimado" ? "≈" : "✓"}</span>{COST_LABEL[k]}{v === "pacote" && <span className="text-muted"> (pacote)</span>}{v === "estimado" && <span> (estimada)</span>}{v === "falta" && <span className="sr-only"> não contabilizado</span>}</li>; })}</ul> : <span className="text-muted">cancelada</span>}</td>
               <td className="whitespace-nowrap px-4 py-3 text-xs tabular-nums"><div className="grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5">
                 <span className="text-muted">Produto</span><span className="text-right">{formatBRL(r.productCents)}</span>
                 <span className="text-muted">Tarifas + envio</span><span className="text-right">−{formatBRL(r.feesCents)}</span>
