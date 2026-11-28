@@ -6,7 +6,7 @@ import { AppError } from "@/lib/errors";
 import { parseMoney } from "@/modules/products/cost";
 import { isIsoDay, brDate, spDay, dayDiff } from "@/modules/purchase-orders/rules";
 import {
-  SHIP_STAGE, ML_TAX_BPS, bpsFromPct, lineProfit, soldLineOf, listingUnitCost, matchListing, shipStage, simulateListing, stockAdjustments, stockRef, variantUnitCost, type ShipStage,
+  SHIP_STAGE, ML_TAX_BPS, foreignOf, parsePrefixes, bpsFromPct, lineProfit, soldLineOf, listingUnitCost, matchListing, shipStage, simulateListing, stockAdjustments, stockRef, variantUnitCost, type ShipStage,
 } from "./rules";
 
 type Tx = Prisma.TransactionClient;
@@ -24,6 +24,51 @@ export async function setMlStockFrom(actorId: string, from: string | null) {
   if (from && !isIsoDay(from)) throw new AppError("VALIDATION", "Data inválida.", 422);
   await db.setting.upsert({ where: { key: STOCK_KEY }, update: { value: { from }, updatedBy: actorId }, create: { key: STOCK_KEY, value: { from }, updatedBy: actorId } });
   await db.auditLog.create({ data: { actorId, action: "mercadolivre.stock_from", entity: "Setting", entityId: STOCK_KEY, after: { from } } });
+}
+
+// ====================================================================== vendas de outra empresa
+const OWN_KEY = "mlOwnSkuPrefixes";
+/** Prefixos de SKU da empresa (vazio = todas as vendas são da empresa). */
+export async function getOwnPrefixes(tx: Tx | typeof db = db): Promise<string[]> {
+  const s = await tx.setting.findUnique({ where: { key: OWN_KEY } });
+  const v = (s?.value as { prefixes?: unknown } | null)?.prefixes;
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+/** Reclassifica vendas (da empresa / de outra empresa) pela regra atual e ajusta o estoque das que mudaram. */
+async function reclassify(tx: Tx, actorId: string | null, where: Prisma.MlOrderItemWhereInput = {}) {
+  const prefixes = await getOwnPrefixes(tx);
+  const items = await tx.mlOrderItem.findMany({ where, select: { id: true, orderId: true, sku: true, foreign: true, foreignManual: true } });
+  const changed = items.filter((i) => foreignOf(i.sku, i.foreignManual, prefixes) !== i.foreign);
+  for (const i of changed) await tx.mlOrderItem.update({ where: { id: i.id }, data: { foreign: !i.foreign } });
+  const orderIds = [...new Set(changed.map((i) => i.orderId))];
+  for (const orderId of orderIds) {
+    const its = await tx.mlOrderItem.findMany({ where: { orderId }, select: { foreign: true } });
+    await tx.mlReceipt.updateMany({ where: { orderId }, data: { foreign: its.length > 0 && its.every((x) => x.foreign) } });
+  }
+  const stock = await applyMlStock(tx, actorId, orderIds);
+  return { changed: changed.length, orders: orderIds.length, stock };
+}
+export async function setOwnPrefixes(actorId: string, text: string) {
+  const prefixes = parsePrefixes(text);
+  if (text.trim() && !prefixes.length) throw new AppError("VALIDATION", "Informe o início dos SKUs da empresa, ex.: PA50.", 422);
+  return db.$transaction(async (tx) => {
+    const before = await getOwnPrefixes(tx);
+    await tx.setting.upsert({ where: { key: OWN_KEY }, update: { value: { prefixes }, updatedBy: actorId }, create: { key: OWN_KEY, value: { prefixes }, updatedBy: actorId } });
+    const r = await reclassify(tx, actorId);
+    await tx.auditLog.create({ data: { actorId, action: "mercadolivre.own_prefixes", entity: "Setting", entityId: OWN_KEY, before: { prefixes: before }, after: { prefixes, changed: r.changed } } });
+    return { prefixes, ...r };
+  }, { timeout: 120_000 });
+}
+/** Correção manual de uma venda: true = de outra empresa, false = da empresa, null = volta para a regra do SKU. */
+export async function setSaleOwner(actorId: string, itemId: string, foreign: boolean | null) {
+  return db.$transaction(async (tx) => {
+    const it = await tx.mlOrderItem.findUnique({ where: { id: itemId }, select: { id: true, orderId: true, foreign: true, foreignManual: true } });
+    if (!it) throw new AppError("NOT_FOUND", "Venda não encontrada.", 404);
+    await tx.mlOrderItem.update({ where: { id: itemId }, data: { foreignManual: foreign } });
+    const r = await reclassify(tx, actorId, { id: itemId });
+    await tx.auditLog.create({ data: { actorId, action: "mercadolivre.sale_owner", entity: "MlOrderItem", entityId: itemId, before: { foreign: it.foreign, manual: it.foreignManual }, after: { manual: foreign, orderId: it.orderId } } });
+    return r;
+  });
 }
 
 // ====================================================================== custos dos produtos
@@ -151,7 +196,7 @@ export async function applyMlStock(tx: Tx, actorId: string | null, orderIds: str
     if (spDay(its[0].saleDate) < from) continue;
     const desired = new Map<string, number>();
     for (const it of its) {
-      if (cancelledOf(it.orderStatus) || !it.listing) continue;
+      if (cancelledOf(it.orderStatus) || it.foreign || !it.listing) continue;
       for (const c of it.listing.components) if (!info.get(c.variantId)?.mto) desired.set(c.variantId, (desired.get(c.variantId) ?? 0) + c.quantity * it.quantity);
     }
     const prev = await tx.stockMovement.groupBy({ by: ["variantId"], where: { reference: stockRef(orderId) }, _sum: { delta: true } });
@@ -174,7 +219,7 @@ export async function applyMlStock(tx: Tx, actorId: string | null, orderIds: str
 export async function applyPendingStock(actorId: string) {
   const from = await getMlStockFrom();
   if (!from) throw new AppError("VALIDATION", "Defina antes a data de início da baixa automática (aba Anúncios).", 422);
-  const ids = (await db.mlOrderItem.findMany({ where: { saleDate: { gte: brDate(from) }, listingId: { not: null } }, select: { orderId: true }, distinct: ["orderId"] })).map((x) => x.orderId);
+  const ids = (await db.mlOrderItem.findMany({ where: { saleDate: { gte: brDate(from) }, listingId: { not: null }, foreign: false }, select: { orderId: true }, distinct: ["orderId"] })).map((x) => x.orderId);
   const r = await db.$transaction((tx) => applyMlStock(tx, actorId, ids), { timeout: 120_000 });
   await db.auditLog.create({ data: { actorId, action: "mercadolivre.stock_apply", entity: "MlOrderItem", entityId: "pendentes", after: { orders: ids.length, moved: r.moved } } });
   return { orders: ids.length, ...r };
@@ -182,9 +227,9 @@ export async function applyPendingStock(actorId: string) {
 
 /** "Recalcular custos": liga vendas a anúncios novos e grava o custo nas vendas que estavam sem (produto que ganhou custo depois). */
 export async function recalcSaleCosts(actorId: string) {
-  const before = await db.mlOrderItem.count({ where: { costCents: null, orderStatus: { not: "cancelled" } } });
+  const before = await db.mlOrderItem.count({ where: { costCents: null, orderStatus: { not: "cancelled" }, foreign: false } });
   const changed = await db.$transaction((tx) => relinkItems(tx), { timeout: 120_000 });
-  const after = await db.mlOrderItem.count({ where: { costCents: null, orderStatus: { not: "cancelled" } } });
+  const after = await db.mlOrderItem.count({ where: { costCents: null, orderStatus: { not: "cancelled" }, foreign: false } });
   await db.auditLog.create({ data: { actorId, action: "mercadolivre.recalc_costs", entity: "MlOrderItem", entityId: "todas", after: { changed, semCustoAntes: before, semCustoDepois: after } } });
   return { changed, fixed: Math.max(0, before - after), left: after };
 }
@@ -205,7 +250,7 @@ export const mlFilterSchema = z.object({
   aba: z.preprocess((v) => (v === "qualidade" ? "validacao" : v), z.enum(["painel", "vendas", "enviar", "anuncios", "produtos", "validacao", "lucro"]).optional()).catch(undefined),
   produto: z.string().max(40).optional().catch(undefined), // anúncios de um produto (variantId) ou "sem" (sem produto ligado)
   tipo: z.enum(["classico", "premium", ""]).optional().catch(undefined),
-  sev: z.enum(["critico", "aviso", "ok", "canceladas", ""]).optional().catch(undefined), // validação das vendas
+  sev: z.enum(["critico", "aviso", "ok", "canceladas", "outras", ""]).optional().catch(undefined), // validação das vendas
   problema: z.string().max(30).optional().catch(undefined),
   de: z.string().optional().refine((v) => !v || isIsoDay(v)).catch(undefined),
   ate: z.string().optional().refine((v) => !v || isIsoDay(v)).catch(undefined),
@@ -222,7 +267,7 @@ export const range = (de: string, ate: string) => ({ gte: new Date(`${de}T00:00:
 
 export async function ordersIn(where: Prisma.MlOrderItemWhereInput) {
   const items = await db.mlOrderItem.findMany({
-    where, orderBy: [{ saleDate: "desc" }, { orderId: "asc" }, { position: "asc" }], take: 20000,
+    where: { AND: [where, { foreign: false }] }, // vendas de outra empresa ficam fora de todos os números orderBy: [{ saleDate: "desc" }, { orderId: "asc" }, { position: "asc" }], take: 20000,
     include: { listing: { select: { id: true, title: true, mlItemId: true, variation: true, saleFeeBps: true, fixedFeeCents: true, shippingCostCents: true, packagingCents: true, taxBps: true, otherCostCents: true, components: { select: { variantId: true, quantity: true } } } } },
   });
   const orderIds = [...new Set(items.map((i) => i.orderId))];
@@ -311,9 +356,9 @@ export async function mlListingsView(f: MlFilter) {
   };
   const listings = await db.mlListing.findMany({ where, orderBy: [{ status: "asc" }, { title: "asc" }], include: { components: { include: { variant: { select: { id: true, sku: true, product: { select: { name: true, code: true, images: IMG } } } } } } } });
   const costs = await unitCosts(db, [...new Set(listings.flatMap((l) => l.components.map((c) => c.variantId)))]);
-  const sold = await db.mlOrderItem.groupBy({ by: ["listingId"], where: { saleDate: range(de, ate), orderStatus: { not: "cancelled" }, listingId: { not: null } }, _sum: { quantity: true } });
+  const sold = await db.mlOrderItem.groupBy({ by: ["listingId"], where: { saleDate: range(de, ate), orderStatus: { not: "cancelled" }, listingId: { not: null }, foreign: false }, _sum: { quantity: true } });
   const soldMap = new Map(sold.map((s) => [s.listingId!, s._sum.quantity ?? 0]));
-  const unlinkedRaw = await db.mlOrderItem.groupBy({ by: ["itemId", "variation", "title", "sku"], where: { listingId: null }, _sum: { quantity: true }, _max: { saleDate: true, unitPriceCents: true } });
+  const unlinkedRaw = await db.mlOrderItem.groupBy({ by: ["itemId", "variation", "title", "sku"], where: { listingId: null, foreign: false }, _sum: { quantity: true }, _max: { saleDate: true, unitPriceCents: true } });
   const unlinked = unlinkedRaw.map((u) => ({ itemId: u.itemId, variation: u.variation ?? "", title: u.title, sku: u.sku, units: u._sum.quantity ?? 0, lastSale: u._max.saleDate, lastPriceCents: u._max.unitPriceCents })).sort((a, b) => b.units - a.units);
   return {
     de, ate, stockFrom: await getMlStockFrom(), unlinked,

@@ -93,3 +93,24 @@ describe("auditoria: linha vendida leva todos os campos", () => {
     expect(l).toEqual({ quantity: 1, productCents: 40000, shippingRevenueCents: 100, saleFeeTotalCents: 4200, shippingFeeCents: 3000, refundCents: 700, bonusCents: 122, otherCents: -50, cancelled: true });
   });
 });
+
+import { foreignOf, isForeignSku, parsePrefixes } from "@/modules/mercadolivre/rules";
+describe("vendas de outra empresa (pelo início do SKU)", () => {
+  it("SKU fora dos prefixos é de outra empresa; sem regra ou sem SKU é da empresa", () => {
+    expect(isForeignSku("PA5005029", ["PA50"])).toBe(false);
+    expect(isForeignSku("pa5005029", ["PA50"])).toBe(false);
+    expect(isForeignSku("PA105004", ["PA50"])).toBe(true);
+    expect(isForeignSku("PA065046", ["PA50", "PA51"])).toBe(true);
+    expect(isForeignSku("PA105004", [])).toBe(false);
+    expect(isForeignSku(null, ["PA50"])).toBe(false);
+  });
+  it("correção manual vence a regra", () => {
+    expect(foreignOf("PA105004", false, ["PA50"])).toBe(false);
+    expect(foreignOf("PA5005029", true, ["PA50"])).toBe(true);
+    expect(foreignOf("PA105004", null, ["PA50"])).toBe(true);
+  });
+  it("lê a lista de prefixos digitada", () => {
+    expect(parsePrefixes(" pa50, PA51;pa50  x$ ")).toEqual(["PA50", "PA51"]);
+    expect(parsePrefixes("")).toEqual([]);
+  });
+});

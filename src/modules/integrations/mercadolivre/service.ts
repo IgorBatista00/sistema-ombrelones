@@ -109,11 +109,13 @@ export async function mlView(f: z.infer<typeof mlFilterSchema>) {
   // pedidos que têm item na categoria escolhida
   const catOrders = f.categoria ? (await db.mlOrderItem.findMany({ where: { categoryId: f.categoria === "sem" ? null : f.categoria }, select: { orderId: true }, distinct: ["orderId"] })).map((x) => x.orderId) : null;
   const where: Prisma.MlReceiptWhereInput = {
+    foreign: false, // vendas de outra empresa ficam fora do Financeiro
     ...(range ? { saleDate: range } : {}),
     ...(q ? { OR: [{ orderId: { contains: f.q!.replace(/\D/g, "") || "§" } }, { buyerNickname: q }, { itemsSummary: q }] } : {}),
     ...(catOrders ? { orderId: { in: catOrders } } : {}),
   };
   const itemWhere: Prisma.MlOrderItemWhereInput = {
+    foreign: false,
     ...(range ? { saleDate: range } : {}),
     ...(q ? { OR: [{ orderId: { contains: f.q!.replace(/\D/g, "") || "§" } }, { title: q }, { itemId: q }] } : {}),
   };

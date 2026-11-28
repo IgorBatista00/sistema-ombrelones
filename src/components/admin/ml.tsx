@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition, type ReactNode } from "react";
-import { applyPendingStockAction, deleteListingAction, markShippedAction, recalcSaleCostsAction, saveListingAction, setMlStockFromAction } from "@/modules/admin/ml-actions";
+import { applyPendingStockAction, deleteListingAction, markShippedAction, recalcSaleCostsAction, saveListingAction, setMlStockFromAction, setOwnPrefixesAction, setSaleOwnerAction } from "@/modules/admin/ml-actions";
 import { bpsFromPct, listingUnitCost, simulateListing } from "@/modules/mercadolivre/rules";
 import { formatBRL } from "@/lib/money";
 import type { ListingInit } from "@/modules/mercadolivre/listing-form";
@@ -156,6 +156,34 @@ export function StockFromForm({ current }: { current: string | null }) {
       {current && <button type="button" className={`${btn} h-10 hover:bg-ink/5`} disabled={pending} onClick={() => { setV(""); go(() => setMlStockFromAction(null), () => setMsg("Baixa automática desligada.")); }}>Desligar</button>}
       {msg && <span className="pb-2 text-xs text-success">{msg}</span>}{err && <span className="pb-2 text-xs text-danger">{err}</span>}
     </div>
+  );
+}
+
+/** Início dos SKUs da empresa: vendas com outro SKU são de outra empresa (mesma conta do ML). */
+export function OwnPrefixesForm({ initial }: { initial: string[] }) {
+  const [v, setV] = useState(initial.join(", "));
+  const [res, setRes] = useState<string | null>(null);
+  const { err, pending, go } = useAct();
+  return (
+    <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); go(() => setOwnPrefixesAction(v), (d) => { setRes(`Salvo: ${d.prefixes.length ? d.prefixes.join(", ") : "todas as vendas são da empresa"}. ${d.changed} venda(s) reclassificada(s).`); }); }} data-own-prefixes>
+      <label className="block text-xs text-muted">SKUs da empresa começam com<input className="mt-1 block h-10 w-64 rounded border border-line bg-white px-3 text-sm text-ink" value={v} onChange={(e) => setV(e.target.value)} placeholder="ex.: PA50" aria-describedby="own-prefixes-help" /></label>
+      <button type="submit" className={`${btn} border border-line bg-white hover:bg-ink/5`} disabled={pending}>{pending ? "Salvando…" : "Salvar"}</button>
+      <span id="own-prefixes-help" className="w-full text-xs text-muted">Separe por vírgula (ex.: PA50, PA51). Vendas com outro SKU ficam como “de outra empresa”. Em branco = todas são da empresa.</span>
+      {res && <span className="w-full text-xs" role="status">{res}</span>}{err && <span className="w-full text-xs text-danger">{err}</span>}
+    </form>
+  );
+}
+
+/** Correção manual de uma venda: da empresa / de outra empresa / voltar à regra do SKU. */
+export function SaleOwnerButton({ id, foreign, manual }: { id: string; foreign: boolean; manual: boolean | null }) {
+  const { err, pending, go } = useAct();
+  const set = (v: boolean | null) => go(() => setSaleOwnerAction(id, v), () => {});
+  return (
+    <span className="inline-flex flex-col items-end gap-1 text-xs">
+      <button type="button" className="link whitespace-nowrap" disabled={pending} onClick={() => set(!foreign)} data-sale-owner={foreign ? "minha" : "outra"}>{foreign ? "É da empresa" : "Não é da empresa"}</button>
+      {manual != null && <button type="button" className="whitespace-nowrap text-muted underline" disabled={pending} onClick={() => set(null)}>voltar à regra do SKU</button>}
+      {err && <span className="text-danger">{err}</span>}
+    </span>
   );
 }
 

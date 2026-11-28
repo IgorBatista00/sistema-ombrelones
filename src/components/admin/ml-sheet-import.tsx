@@ -54,18 +54,18 @@ export function MlSheetImportButton() {
                 {err && <p className="mt-3 rounded border border-danger/40 bg-danger/5 p-3 text-sm text-danger" role="alert">{err}</p>}
                 {prev && (
                   <>
-                    <p className="mt-4 text-sm" data-ml-summary><b>{prev.totals.orders}</b> venda(s) · produtos <b>{formatBRL(prev.totals.productCents)}</b> · tarifas {formatBRL(prev.totals.feeCents)}{prev.totals.cancelled ? ` · ${prev.totals.cancelled} cancelada(s) (entram como estornadas)` : ""}{prev.totals.removed ? ` · ${prev.totals.removed} resumo(s) de pacote importado(s) antes por engano serão removidos` : ""}{prev.lineIssues.some((l) => l.errors.length) ? <span className="text-danger"> · {prev.lineIssues.filter((l) => l.errors.length).length} linha(s) com erro (ignoradas)</span> : null}</p>
+                    <p className="mt-4 text-sm" data-ml-summary><b>{prev.totals.orders}</b> venda(s) · produtos <b>{formatBRL(prev.totals.productCents)}</b> · tarifas {formatBRL(prev.totals.feeCents)}{prev.totals.cancelled ? ` · ${prev.totals.cancelled} cancelada(s) (entram como estornadas)` : ""}{prev.totals.foreign ? ` · ${prev.totals.foreign} de outra empresa (SKU fora de ${prev.prefixes.join(", ")}: guardadas, mas fora dos números)` : ""}{prev.totals.removed ? ` · ${prev.totals.removed} resumo(s) de pacote importado(s) antes por engano serão removidos` : ""}{prev.lineIssues.some((l) => l.errors.length) ? <span className="text-danger"> · {prev.lineIssues.filter((l) => l.errors.length).length} linha(s) com erro (ignoradas)</span> : null}</p>
                     <div className="mt-2 flex-1 overflow-auto rounded border border-line">
                       <table className="w-full text-left text-xs">
                         <thead className="sticky top-0 bg-surface text-[10px] uppercase tracking-label text-muted"><tr>{["Venda", "Data", "Comprador", "Itens", "Produtos", "Tarifa", "Líquido", "Situação", "Ação"].map((h) => <th key={h} className="px-3 py-2 font-normal">{h}</th>)}</tr></thead>
                         <tbody className="divide-y divide-line">
                           {prev.orders.map((o) => (
-                            <tr key={o.orderId} data-ml-row={o.orderId} className={o.cancelled ? "text-muted" : ""}>
+                            <tr key={o.orderId} data-ml-row={o.orderId} className={o.cancelled || o.foreign ? "text-muted" : ""}>
                               <td className="whitespace-nowrap px-3 py-2">{o.orderId}<div className="text-[10px] text-muted">linha {o.lines.join(", ")}</div></td>
                               <td className="whitespace-nowrap px-3 py-2">{dt(o.saleDate)}</td><td className="px-3 py-2">{o.buyer ?? "—"}</td>
                               <td className="max-w-72 px-3 py-2"><span className="line-clamp-2">{o.items}</span></td>
                               <td className="whitespace-nowrap px-3 py-2">{formatBRL(o.productCents)}</td><td className="whitespace-nowrap px-3 py-2">{o.feeCents != null ? formatBRL(o.feeCents) : "—"}</td><td className="whitespace-nowrap px-3 py-2">{o.netCents != null ? formatBRL(o.netCents) : "—"}</td>
-                              <td className="max-w-40 px-3 py-2">{o.cancelled ? <span className="text-danger">Cancelada</span> : o.status}</td>
+                              <td className="max-w-40 px-3 py-2">{o.foreign ? <span className="text-warning">De outra empresa</span> : o.cancelled ? <span className="text-danger">Cancelada</span> : o.status}</td>
                               <td className="px-3 py-2">{o.action}{o.note && <div className="text-[10px] text-muted">{o.note}</div>}</td>
                             </tr>
                           ))}

@@ -47,8 +47,8 @@ export async function myDay(day: string, perms: string[]) {
       : null,
     can("LOGISTICS") ? db.delivery.count({ where: { status: "A_AGENDAR", scheduledAt: null, promisedAt: null } }) : 0,
     // Mercado Livre: pedidos do dia (data da venda), exceto cancelados
-    can("ORDERS") || can("FINANCE") ? db.mlOrderItem.findMany({ where: { saleDate: range, orderStatus: { not: "cancelled" } }, orderBy: [{ saleDate: "asc" }, { position: "asc" }] }) : [],
-    can("ORDERS") || can("FINANCE") ? db.mlReceipt.findMany({ where: { saleDate: range }, select: { orderId: true, paymentStatus: true, grossCents: true, feeCents: true, netCents: true, buyerNickname: true } }) : [],
+    can("ORDERS") || can("FINANCE") ? db.mlOrderItem.findMany({ where: { saleDate: range, orderStatus: { not: "cancelled" }, foreign: false }, orderBy: [{ saleDate: "asc" }, { position: "asc" }] }) : [],
+    can("ORDERS") || can("FINANCE") ? db.mlReceipt.findMany({ where: { saleDate: range, foreign: false }, select: { orderId: true, paymentStatus: true, grossCents: true, feeCents: true, netCents: true, buyerNickname: true } }) : [],
     can("ORDERS") || can("FINANCE") ? db.mlConnection.findUnique({ where: { id: "default" }, select: { nickname: true, lastSyncAt: true, lastSyncError: true } }) : null,
   ]);
   const okReceipts = mlReceipts.filter((r) => r.paymentStatus !== "refunded" && r.paymentStatus !== "cancelled" && r.paymentStatus !== "rejected");

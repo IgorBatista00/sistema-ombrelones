@@ -82,7 +82,7 @@ export async function mlDashboard(f: MlFilter) {
   }
   // detalhamento de receitas e custos (todas as colunas de valor da planilha + custos do cadastro)
   const items = await db.mlOrderItem.findMany({
-    where: { saleDate: range(de, ate) },
+    where: { saleDate: range(de, ate), foreign: false },
     select: { quantity: true, productCents: true, unitPriceCents: true, shippingRevenueCents: true, saleFeeTotalCents: true, saleFeeCents: true, shippingFeeCents: true, shipAllocCents: true, inPack: true, refundCents: true, netCents: true, bonusCents: true, otherLines: true, costCents: true, orderStatus: true,
       listing: { select: { saleFeeBps: true, fixedFeeCents: true, shippingCostCents: true, packagingCents: true, taxBps: true, otherCostCents: true } } },
   });

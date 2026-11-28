@@ -114,6 +114,18 @@ export function allocatePackShipping<T extends { key: string; group: string | nu
   return out;
 }
 
+/** Venda de outra empresa (mesma conta do ML): o SKU não começa com nenhum dos prefixos da empresa. Sem prefixos cadastrados ou sem SKU = da empresa. */
+export function isForeignSku(sku: string | null | undefined, prefixes: string[]): boolean {
+  const s = (sku ?? "").trim().toUpperCase();
+  const ps = prefixes.map((p) => p.trim().toUpperCase()).filter(Boolean);
+  if (!ps.length || !s) return false;
+  return !ps.some((p) => s.startsWith(p));
+}
+export const foreignOf = (sku: string | null | undefined, manual: boolean | null | undefined, prefixes: string[]) => manual ?? isForeignSku(sku, prefixes);
+export function parsePrefixes(text: string): string[] {
+  return [...new Set(text.split(/[\s,;]+/).map((p) => p.trim().toUpperCase()).filter((p) => /^[A-Z0-9._-]{1,20}$/.test(p)))].slice(0, 30);
+}
+
 /** Simulação no cadastro do anúncio: quanto sobra por unidade vendida ao preço informado. */
 export function simulateListing(priceCents: number, l: ListingCosts, unitCostCents: number | null) {
   return lineProfit({ quantity: 1, productCents: priceCents }, l, unitCostCents);
